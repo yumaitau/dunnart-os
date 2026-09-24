@@ -1,0 +1,108 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dunnart-os-workshop",
+  "main": ".wrangler/validate/src/server.ts",
+  "build": {
+    "command": "pnpm run build:worker",
+    "watch_dir": "src"
+  },
+  "compatibility_date": "2026-09-04",
+  "compatibility_flags": [
+    "allow_irrevocable_stub_storage",
+    "global_fetch_strictly_public",
+    "nodejs_compat"
+  ],
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "migrations": [
+    {
+      "tag": "v0",
+      "new_sqlite_classes": [
+        "UserDurableObject",
+        "OverseerDurableObject"
+      ]
+    },
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "AdminSettings"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "PendingLogin"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "UserDirectoryDurableObject"
+      ]
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "BLUEPRINTS",
+      "id": "4315c948485a4e8bbc4029848adabd8b"
+    },
+    {
+      "binding": "AVATARS",
+      "id": "8dcdd00cb4e0408ea278ced138d907fb"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BLUEPRINT_CONTENT",
+      "bucket_name": "dunnart-os-blueprint-content"
+    }
+  ],
+  "worker_loaders": [
+    {
+      "binding": "LOADER"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": false
+    }
+  },
+  "account_id": "3eed46cc48f123cdff00d116df5e5070",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "PUBLIC_BASE_URL": "https://dunnart.yumait.au",
+    "CF_ACCESS_ISS": "https://yumait.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "6c618e46001c9081fd37d6487455aeb3f4db19bbc6388890a642aa982a7140dd",
+    "ADMINS": [
+      "justin@yumait.com.au"
+    ],
+    "CF_AI_GATEWAY": "dunnart-os-ai",
+    "CF_AI_GATEWAY_ACCOUNT_ID": "3eed46cc48f123cdff00d116df5e5070",
+    "CF_AI_GATEWAY_PROVIDERS": "cloudflare"
+  },
+  "ai": {
+    "binding": "WORKERS_AI"
+  },
+  "services": [
+    {
+      "binding": "GATEKEEPER_CONTEXT",
+      "service": "dunnart-os-context",
+      "entrypoint": "GatekeeperVendor",
+      "props": {
+        "sharingDomain": "https://dunnart.yumait.au"
+      }
+    },
+    {
+      "binding": "GATEKEEPER_SCHEDULER",
+      "service": "dunnart-os-scheduler",
+      "entrypoint": "GatekeeperVendor"
+    }
+  ]
+}

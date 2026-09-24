@@ -30,6 +30,12 @@ packages/workshop-backend/src/generated/browser-export-page.js
 wrangler.prod.jsonc
 wrangler.staging.jsonc
 
+# Credential-free configuration for the managed Dunnart production instance.
+!/packages/router/wrangler.prod.jsonc
+!/packages/workshop-backend/wrangler.prod.jsonc
+!/packages/gatekeeper-context/wrangler.prod.jsonc
+!/packages/gatekeeper-scheduler/wrangler.prod.jsonc
+
 # Site-specific dev server configs.
 wrangler.dev.jsonc
 
