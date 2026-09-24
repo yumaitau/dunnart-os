@@ -1,0 +1,21 @@
+{
+  "blueprintId": "format.dunnart-planner",
+  "title": "Dunnart Planner",
+  "description": "Plan work on a task board and schedule events in a calendar. See task due dates alongside events, and edit both with the agent or directly in the planner.",
+  "output": {
+    "id": "planner",
+    "noun": "Planner",
+    "plural": "Planners",
+    "icon": "kanban"
+  },
+  "author": {
+    "type": "user",
+    "name": "Dunnart",
+    "id": "dunnart-planner"
+  },
+  "revision": 1,
+  "created": "2026-09-24T00:00:00.000Z",
+  "version": 1,
+  "lastUpdated": "2026-09-24T00:00:00.000Z",
+  "bindings": {}
+}
