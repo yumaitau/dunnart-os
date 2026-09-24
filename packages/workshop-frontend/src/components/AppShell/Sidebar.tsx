@@ -2,8 +2,8 @@ import { Link } from '@tanstack/react-router'
 import {
   Blueprint,
   BookOpen,
+  CalendarDots,
   Compass,
-  Hexagon,
   House,
   MagnifyingGlass,
   SidebarSimple,
@@ -12,6 +12,8 @@ import {
 } from '@phosphor-icons/react'
 import { useSiteName } from '../../ServerConfigContext'
 import SiteLogo from '../SiteLogo'
+import DunnartMark from '../DunnartMark'
+import { useOutputFormats } from '../format/useOutputFormats'
 import { useGatekeeperApps } from '../../useGatekeeperApps'
 import { openCommandPalette } from './commandPaletteBus'
 import SidebarItem from './SidebarItem'
@@ -42,6 +44,8 @@ export default function Sidebar({
   onToggleCollapsed: () => void
 }) {
   const siteName = useSiteName()
+  const { formats } = useOutputFormats()
+  const planner = formats.find(format => format.blueprintId === 'format.dunnart-planner')
   // Gatekeeper-served management apps the user can reach now (one per gatekeeper that provides a UI
   // and is connected / enabled for everyone). Disabled or not-yet-connected ones aren't returned, so
   // they simply don't appear. The set is fully dynamic — no gatekeeper is hardcoded.
@@ -67,11 +71,12 @@ export default function Sidebar({
       >
         <Link to="/" aria-label={siteName} className="flex min-w-0 items-center gap-2">
           <SiteLogo size={20} className="shrink-0">
-            <Hexagon size={20} weight="bold" className="text-kumo-brand shrink-0" />
+            <DunnartMark size={20} />
           </SiteLogo>
           {!collapsed && (
-            <span className="truncate text-[14px] leading-5 font-semibold tracking-[-0.25px] text-kumo-default">
+            <span className="min-w-0 truncate text-[14px] leading-5 font-semibold tracking-[-0.25px] text-kumo-default">
               {siteName}
+              {siteName === 'Dunnart' && <small className="ml-1 text-[10px] font-normal text-kumo-subtle">by Yuma IT</small>}
             </span>
           )}
         </Link>
@@ -135,6 +140,15 @@ export default function Sidebar({
               icon={<Blueprint size={14} weight="regular" />}
               collapsed={collapsed}
             />
+            {planner && (
+              <SidebarItem
+                to="/blueprint/$id"
+                params={{ id: planner.blueprintId }}
+                label="New planner"
+                icon={<CalendarDots size={14} weight="regular" />}
+                collapsed={collapsed}
+              />
+            )}
             <SidebarItem
               to="/outputs"
               label="Outputs"
