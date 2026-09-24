@@ -1,6 +1,6 @@
 import { classifyRpcError, logRpcFailure } from "../rpcErrors";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useKumoToastManager } from "@cloudflare/kumo";
 import { ChatComposer } from "../features/chat/composer/ChatComposer";
 import MeshBackground from "../components/MeshBackground";
@@ -201,6 +201,17 @@ export function HomePageContent({ prompt }: HomeSearch) {
         />
 
         {/* A few example work tasks to spark ideas. Picking one seeds the composer above. */}
+        <nav aria-label="Tasks and calendar" className="grid grid-cols-2 gap-3">
+          <Link to="/tasks" className="rounded-xl border border-kumo-line bg-kumo-elevated px-4 py-3 text-left transition-colors hover:bg-kumo-tint">
+            <span className="block text-[14px] font-semibold text-kumo-default">Tasks</span>
+            <span className="mt-1 block text-[13px] text-kumo-subtle">Open work, due dates, and priority.</span>
+          </Link>
+          <Link to="/calendar" className="rounded-xl border border-kumo-line bg-kumo-elevated px-4 py-3 text-left transition-colors hover:bg-kumo-tint">
+            <span className="block text-[14px] font-semibold text-kumo-default">Calendar</span>
+            <span className="mt-1 block text-[13px] text-kumo-subtle">The week, with tasks on the hours they fall.</span>
+          </Link>
+        </nav>
+
         <HomeTaskSuggestions
           onPick={(suggestion) =>
             setSeed((prev) => ({ text: suggestion, nonce: (prev?.nonce ?? 0) + 1 }))

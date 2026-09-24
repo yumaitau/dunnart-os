@@ -23,6 +23,9 @@ const testState = vi.hoisted(() => {
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useNavigate: () => testState.navigate,
+  Link: ({ to, children, ...rest }: { to: string; children: React.ReactNode }) => (
+    <a href={to} {...rest}>{children}</a>
+  ),
 }));
 
 vi.mock("@cloudflare/kumo", () => ({

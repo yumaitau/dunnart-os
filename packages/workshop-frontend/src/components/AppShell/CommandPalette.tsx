@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate } from '@tanstack/react-router'
 import {
   Blueprint,
+  CalendarDots,
+  ClipboardText,
   MagnifyingGlass,
   Plus,
   SquaresFour,
@@ -235,6 +237,18 @@ export default function CommandPalette({
     }))
 
     const nav: Command[] = [
+      {
+        id: 'nav-tasks',
+        label: 'Tasks',
+        icon: <ClipboardText size={15} />,
+        run: () => navigate({ to: '/tasks' }),
+      },
+      {
+        id: 'nav-calendar',
+        label: 'Calendar',
+        icon: <CalendarDots size={15} />,
+        run: () => navigate({ to: '/calendar' }),
+      },
       {
         id: 'nav-new',
         label: 'New workspace',

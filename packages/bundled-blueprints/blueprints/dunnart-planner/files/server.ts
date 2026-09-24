@@ -1,9 +1,11 @@
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { MutationQueue } from "@gadgets/bundled-blueprints/libraries/sync/server";
-import type { EventInput, EventPatch, PlannerEvent, PlannerSnapshot, PlannerStub, PlannerTask, TaskInput, TaskPatch, TaskStatus } from "./lib/protocol.ts";
+import type { EventInput, EventPatch, PlannerEvent, PlannerSnapshot, PlannerStub, PlannerTask, TaskInput, TaskPatch, TaskPriority, TaskStatus } from "./lib/protocol.ts";
 
 const STATUSES: TaskStatus[] = ["todo", "doing", "done"];
+const PRIORITIES: TaskPriority[] = ["normal", "high", "urgent"];
 const DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 // Leave room for structured-clone overhead under the 128 KiB KV-backed value limit.
 const MAX_SNAPSHOT_BYTES = 96 * 1024;
 
@@ -32,6 +34,19 @@ function title(value: unknown): string {
 function status(value: unknown): TaskStatus {
   if (!STATUSES.includes(value as TaskStatus)) throw new TypeError("Invalid task status.");
   return value as TaskStatus;
+}
+
+function priority(value: unknown): TaskPriority {
+  if (!PRIORITIES.includes(value as TaskPriority)) throw new TypeError("Invalid task priority.");
+  return value as TaskPriority;
+}
+
+function clock(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string" || !TIME.test(value)) {
+    throw new TypeError("Time must be HH:MM or null.");
+  }
+  return value;
 }
 
 function description(value: unknown): string {
@@ -73,6 +88,8 @@ export class Gadget extends DurableObject {
         description: input.description === undefined ? "" : description(input.description),
         status: nextStatus,
         dueDate: input.dueDate === undefined ? null : dueDate(input.dueDate),
+        dueTime: input.dueTime === undefined ? null : clock(input.dueTime),
+        priority: input.priority === undefined ? "normal" : priority(input.priority),
         order: Math.max(0, ...current.tasks.filter(task => task.status === nextStatus)
           .map(task => task.order + 1)),
       };
@@ -95,6 +112,8 @@ export class Gadget extends DurableObject {
         description: patch.description === undefined ? previous.description : description(patch.description),
         status: nextStatus,
         dueDate: patch.dueDate === undefined ? previous.dueDate : dueDate(patch.dueDate),
+        dueTime: patch.dueTime === undefined ? previous.dueTime ?? null : clock(patch.dueTime),
+        priority: patch.priority === undefined ? previous.priority ?? "normal" : priority(patch.priority),
         order: patch.order === undefined
           ? nextStatus === previous.status ? previous.order : Math.max(0,
             ...current.tasks.filter(task => task.status === nextStatus).map(task => task.order + 1))
@@ -122,6 +141,7 @@ export class Gadget extends DurableObject {
       if (!input || typeof input !== "object") throw new TypeError("Event is required.");
       const event: PlannerEvent = {
         id: crypto.randomUUID(), title: title(input.title), date: eventDate(input.date),
+        time: input.time === undefined ? null : clock(input.time),
         notes: input.notes === undefined ? "" : description(input.notes),
       };
       const current = await this.getTasks();
@@ -143,6 +163,7 @@ export class Gadget extends DurableObject {
         ...previous,
         title: patch.title === undefined ? previous.title : title(patch.title),
         date: patch.date === undefined ? previous.date : eventDate(patch.date),
+        time: patch.time === undefined ? previous.time ?? null : clock(patch.time),
         notes: patch.notes === undefined ? previous.notes : description(patch.notes),
       };
       const events = [...current.events];

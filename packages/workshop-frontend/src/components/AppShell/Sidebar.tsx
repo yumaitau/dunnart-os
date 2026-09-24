@@ -3,6 +3,7 @@ import {
   Blueprint,
   BookOpen,
   CalendarDots,
+  ClipboardText,
   Compass,
   House,
   MagnifyingGlass,
@@ -13,7 +14,6 @@ import {
 import { useSiteName } from '../../ServerConfigContext'
 import SiteLogo from '../SiteLogo'
 import DunnartMark from '../DunnartMark'
-import { useOutputFormats } from '../format/useOutputFormats'
 import { useGatekeeperApps } from '../../useGatekeeperApps'
 import { openCommandPalette } from './commandPaletteBus'
 import SidebarItem from './SidebarItem'
@@ -44,8 +44,6 @@ export default function Sidebar({
   onToggleCollapsed: () => void
 }) {
   const siteName = useSiteName()
-  const { formats } = useOutputFormats()
-  const planner = formats.find(format => format.blueprintId === 'format.dunnart-planner')
   // Gatekeeper-served management apps the user can reach now (one per gatekeeper that provides a UI
   // and is connected / enabled for everyone). Disabled or not-yet-connected ones aren't returned, so
   // they simply don't appear. The set is fully dynamic — no gatekeeper is hardcoded.
@@ -122,6 +120,18 @@ export default function Sidebar({
           {/* Primary nav */}
           <nav className="flex flex-col gap-0.5 px-2">
             <SidebarItem
+              to="/tasks"
+              label="Tasks"
+              icon={<ClipboardText size={14} weight="regular" />}
+              collapsed={collapsed}
+            />
+            <SidebarItem
+              to="/calendar"
+              label="Calendar"
+              icon={<CalendarDots size={14} weight="regular" />}
+              collapsed={collapsed}
+            />
+            <SidebarItem
               to="/"
               label="Home"
               icon={<House size={14} weight="regular" />}
@@ -139,15 +149,6 @@ export default function Sidebar({
               icon={<Blueprint size={14} weight="regular" />}
               collapsed={collapsed}
             />
-            {planner && (
-              <SidebarItem
-                to="/blueprint/$id"
-                params={{ id: planner.blueprintId }}
-                label="New planner"
-                icon={<CalendarDots size={14} weight="regular" />}
-                collapsed={collapsed}
-              />
-            )}
             <SidebarItem
               to="/outputs"
               label="Outputs"
