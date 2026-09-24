@@ -76,7 +76,6 @@ export default function Sidebar({
           {!collapsed && (
             <span className="min-w-0 truncate text-[14px] leading-5 font-semibold tracking-[-0.25px] text-kumo-default">
               {siteName}
-              {siteName === 'Dunnart' && <small className="ml-1 text-[10px] font-normal text-kumo-subtle">by Yuma IT</small>}
             </span>
           )}
         </Link>

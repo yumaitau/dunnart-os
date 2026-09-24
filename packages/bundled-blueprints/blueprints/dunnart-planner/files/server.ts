@@ -4,6 +4,8 @@ import type { EventInput, EventPatch, PlannerEvent, PlannerSnapshot, PlannerStub
 
 const STATUSES: TaskStatus[] = ["todo", "doing", "done"];
 const DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
+// Leave room for structured-clone overhead under the 128 KiB KV-backed value limit.
+const MAX_SNAPSHOT_BYTES = 96 * 1024;
 
 function dueDate(value: unknown): string | null {
   if (value === null) return null;
@@ -49,6 +51,13 @@ function order(value: unknown): number {
 export class Gadget extends DurableObject {
   private mutations = new MutationQueue();
 
+  private async save(snapshot: PlannerSnapshot): Promise<void> {
+    if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength > MAX_SNAPSHOT_BYTES) {
+      throw new RangeError("Planner is full. Delete tasks or events before adding more.");
+    }
+    await this.ctx.storage.put("planner", snapshot);
+  }
+
   async getTasks(): Promise<PlannerSnapshot> {
     return (await this.ctx.storage.get<PlannerSnapshot>("planner")) ?? { revision: 0, tasks: [], events: [] };
   }
@@ -67,7 +76,7 @@ export class Gadget extends DurableObject {
         order: Math.max(0, ...current.tasks.filter(task => task.status === nextStatus)
           .map(task => task.order + 1)),
       };
-      await this.ctx.storage.put("planner", { ...current, revision: current.revision + 1, tasks: [...current.tasks, next] });
+      await this.save({ ...current, revision: current.revision + 1, tasks: [...current.tasks, next] });
       return next;
     });
   }
@@ -93,7 +102,7 @@ export class Gadget extends DurableObject {
       };
       const tasks = [...current.tasks];
       tasks[index] = next;
-      await this.ctx.storage.put("planner", { ...current, revision: current.revision + 1, tasks });
+      await this.save({ ...current, revision: current.revision + 1, tasks });
       return next;
     });
   }
@@ -103,7 +112,7 @@ export class Gadget extends DurableObject {
       const current = await this.getTasks();
       const tasks = current.tasks.filter(task => task.id !== id);
       if (tasks.length === current.tasks.length) return false;
-      await this.ctx.storage.put("planner", { ...current, revision: current.revision + 1, tasks });
+      await this.save({ ...current, revision: current.revision + 1, tasks });
       return true;
     });
   }
@@ -116,7 +125,7 @@ export class Gadget extends DurableObject {
         notes: input.notes === undefined ? "" : description(input.notes),
       };
       const current = await this.getTasks();
-      await this.ctx.storage.put("planner", {
+      await this.save({
         ...current, revision: current.revision + 1, events: [...current.events, event],
       });
       return event;
@@ -138,7 +147,7 @@ export class Gadget extends DurableObject {
       };
       const events = [...current.events];
       events[index] = event;
-      await this.ctx.storage.put("planner", { ...current, revision: current.revision + 1, events });
+      await this.save({ ...current, revision: current.revision + 1, events });
       return event;
     });
   }
@@ -148,7 +157,7 @@ export class Gadget extends DurableObject {
       const current = await this.getTasks();
       const events = current.events.filter(event => event.id !== id);
       if (events.length === current.events.length) return false;
-      await this.ctx.storage.put("planner", { ...current, revision: current.revision + 1, events });
+      await this.save({ ...current, revision: current.revision + 1, events });
       return true;
     });
   }

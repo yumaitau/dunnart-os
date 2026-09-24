@@ -56,6 +56,26 @@ describe("Dunnart Planner", () => {
     expect((await gadget.getTasks()).revision).toBe(0);
   });
 
+  it("rejects an oversized snapshot without losing saved events", async () => {
+    const gadget = planner();
+    let rejected = false;
+    for (let i = 0; i < 30; i++) {
+      try {
+        await gadget.createEvent({ title: `Event ${i}`, date: "2026-09-30", notes: "x".repeat(4000) });
+      } catch (error) {
+        expect(error).toBeInstanceOf(RangeError);
+        expect((error as Error).message).toMatch(/Planner is full/);
+        rejected = true;
+        break;
+      }
+    }
+    expect(rejected).toBe(true);
+    const snapshot = await gadget.getTasks();
+    expect(snapshot.events.length).toBeGreaterThan(0);
+    expect(snapshot.events.length).toBeLessThan(30);
+    expect(snapshot.revision).toBe(snapshot.events.length);
+  });
+
   it("exports current planner data without browser-only state", async () => {
     const gadget = planner();
     await gadget.createTask({ title: "Shared task", dueDate: "2026-09-30" });

@@ -105,7 +105,6 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
             <DunnartMark size={40} />
           </SiteLogo>
           <h1 className="text-xl font-semibold text-kumo-default">{siteName}</h1>
-          <span className="text-xs text-kumo-subtle">by Yuma IT</span>
           <p className="text-sm text-kumo-subtle mt-1">Sign in to your account</p>
         </div>
 

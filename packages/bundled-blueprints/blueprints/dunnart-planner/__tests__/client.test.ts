@@ -4,9 +4,35 @@ import type { EventInput, PlannerSnapshot, TaskInput } from "../files/lib/protoc
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.resetModules();
   delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
   delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close;
   document.body.replaceChildren();
+});
+
+it("closes the editor after a saved task when refresh fails", async () => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value() { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value() { this.open = false; } });
+  vi.spyOn(window, "setInterval").mockImplementation(() => 0 as unknown as ReturnType<typeof setInterval>);
+  let reads = 0;
+  let writes = 0;
+  vi.stubGlobal("gadget", {
+    getTasks: async () => {
+      if (++reads > 1) throw new Error("Refresh unavailable");
+      return { revision: 0, tasks: [], events: [] };
+    },
+    createTask: async () => { writes++; return { id: "saved" }; },
+  });
+  await import("../files/client.ts");
+  await vi.waitFor(() => expect(reads).toBe(1));
+  document.querySelector<HTMLButtonElement>(".top .primary")!.click();
+  const dialog = document.querySelector<HTMLDialogElement>("dialog")!;
+  const form = dialog.querySelector<HTMLFormElement>("form")!;
+  form.querySelector<HTMLInputElement>('input[name="title"]')!.value = "One task";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.waitFor(() => expect(dialog.open).toBe(false));
+  expect(writes).toBe(1);
+  expect(document.querySelector('[role="status"]')?.textContent).toMatch(/Planner saved/);
 });
 
 it("shows board tasks and new events together on the calendar", async () => {

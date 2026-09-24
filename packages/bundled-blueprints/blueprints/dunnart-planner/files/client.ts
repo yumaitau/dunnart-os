@@ -118,20 +118,25 @@ async function mutate(action: () => Promise<unknown>): Promise<boolean> {
   busy = true;
   try {
     await action();
+  } catch (error) {
+    announcement.textContent = error instanceof Error ? error.message : "Could not save task.";
+    const message = dialog.querySelector(".message");
+    if (message) message.textContent = announcement.textContent;
+    busy = false;
+    return false;
+  }
+  try {
     const result = await gadget.getTasks();
     ++request;
     snapshot = result;
     render();
     announcement.textContent = "Planner saved.";
-    return true;
-  } catch (error) {
-    announcement.textContent = error instanceof Error ? error.message : "Could not save task.";
-    const message = dialog.querySelector(".message");
-    if (message) message.textContent = announcement.textContent;
-    return false;
+  } catch {
+    announcement.textContent = "Planner saved. Could not refresh the view.";
   } finally {
     busy = false;
   }
+  return true;
 }
 
 function openEditor(task: PlannerTask | null = null, date: string | null = null, status: TaskStatus = "todo"): void {
@@ -322,7 +327,7 @@ function render(): void {
   root.replaceChildren();
   const header = el("header", "top");
   const title = el("div");
-  title.append(el("div", "eyebrow", "Dunnart · by Yuma IT"), el("h1", "", "Planner"),
+  title.append(el("div", "eyebrow", "Dunnart"), el("h1", "", "Planner"),
     el("p", "sub", "Work in motion, deadlines in sight."));
   header.append(title, view === "board"
     ? button("+ New task", () => openEditor(), "button primary")
