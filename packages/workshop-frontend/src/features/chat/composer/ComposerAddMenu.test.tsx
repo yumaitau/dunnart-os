@@ -9,6 +9,10 @@ import type { Overseer, SlashCommandChoice } from "@gadgets/workshop-shared/api"
 import { invalidateSlashCommandCatalog } from "../../../components/chat/slash-command-catalog";
 import ComposerAddMenu from "./ComposerAddMenu";
 
+vi.mock("../../../ServerConfigContext", () => ({
+  useServerConfig: () => ({ skillsOffered: true }),
+}));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 Element.prototype.scrollIntoView ??= () => {};
 

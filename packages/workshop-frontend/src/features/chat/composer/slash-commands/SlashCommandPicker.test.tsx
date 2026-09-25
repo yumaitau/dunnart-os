@@ -8,6 +8,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Overseer, SlashCommandChoice } from "@gadgets/workshop-shared/api";
 import { useSlashCommandPicker } from "./SlashCommandPicker";
 
+vi.mock("../../../../ServerConfigContext", () => ({
+  useServerConfig: () => ({ skillsOffered: true }),
+}));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 Element.prototype.scrollIntoView ??= () => {};
 

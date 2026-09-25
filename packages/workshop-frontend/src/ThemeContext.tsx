@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useServerConfig } from './ServerConfigContext'
 import {
   applyThemeMode,
+  hasStoredThemeMode,
   readThemeMode,
   resolveThemeMode,
   writeThemeMode,
@@ -25,6 +27,13 @@ function getInitialThemeState() {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeState, setThemeState] = useState(getInitialThemeState)
   const { themeMode, resolvedThemeMode } = themeState
+  const instanceTheme = useServerConfig()?.themeMode
+
+  // The instance default applies only until this browser has its own choice.
+  useEffect(() => {
+    if (!instanceTheme || hasStoredThemeMode()) return
+    setThemeState({ themeMode: instanceTheme, resolvedThemeMode: applyThemeMode(instanceTheme) })
+  }, [instanceTheme])
 
   useEffect(() => {
     if (themeMode !== 'system') {

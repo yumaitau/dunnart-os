@@ -3,9 +3,12 @@ import { RpcStub } from 'capnweb'
 import { Switch, Textarea, Input, Button, Tabs, useKumoToastManager } from '@cloudflare/kumo'
 import { Hexagon, MagnifyingGlass, ShieldWarning, UserPlus } from '@phosphor-icons/react'
 import { useAuthenticatedApi } from './AuthContext'
-import { AdminApi, AdminFormat, AdminResourceVendor, AmbientGatekeeperMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR } from '@gadgets/workshop-shared/api'
-import { applyAccentColor, DEFAULT_ACCENT_COLOR } from './theme'
+import { AdminApi, AdminFormat, AdminResourceVendor, AmbientGatekeeperMode, INSTANCE_NAV_ITEMS, InstanceNavItemId, InstanceThemeMode, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_ANNOUNCEMENT_LENGTH, MAX_SITE_NAME_LENGTH, DEFAULT_SITE_NAME, BannerColor, BANNER_COLORS, DEFAULT_BANNER_COLOR } from '@gadgets/workshop-shared/api'
+import { applyAccentColor, applyThemeMode, DEFAULT_ACCENT_COLOR } from './theme'
+import { useTheme } from './ThemeContext'
 import { cacheBustSiteLogoUrl, prepareSiteLogo } from './siteLogoUtils'
+import { CF_ACCESS_MODE } from './useAuth'
+import { useServerConfig } from './ServerConfigContext'
 import SiteLogo from './components/SiteLogo'
 import { useDocumentTitle } from './useDocumentTitle'
 import AdminFormatsPanel from './components/format/AdminFormatsPanel'
@@ -32,6 +35,7 @@ const BANNER_SWATCH: Record<BannerColor, string> = {
 
 export default function AdminPage() {
   const { authenticatedApi, isAdmin } = useAuthenticatedApi()
+  const serverConfig = useServerConfig()
   const toasts = useKumoToastManager()
   useDocumentTitle('Admin')
 
@@ -60,6 +64,16 @@ export default function AdminPage() {
   // Accent (brand) color: '' means the default theme. Live-previewed while editing.
   const [savedAccent, setSavedAccent] = useState('')
   const [accentDraft, setAccentDraft] = useState('')
+  const [savedThemeMode, setSavedThemeMode] = useState<InstanceThemeMode>('system')
+  const [themeModeDraft, setThemeModeDraft] = useState<InstanceThemeMode>('system')
+  const [savingThemeMode, setSavingThemeMode] = useState(false)
+  const [hiddenNav, setHiddenNav] = useState<InstanceNavItemId[]>([])
+  const [skillsOffered, setSkillsOffered] = useState(false)
+  const [mcpOffered, setMcpOffered] = useState(false)
+  const [savingSkills, setSavingSkills] = useState(false)
+  const [savingMcp, setSavingMcp] = useState(false)
+  const [navBusy, setNavBusy] = useState<string | null>(null)
+  const { themeMode: visitorTheme } = useTheme()
   const [savingAccent, setSavingAccent] = useState(false)
 
   // Site name (shown next to the top-bar logo): last-saved value + current editor draft.
@@ -108,6 +122,11 @@ export default function AdminPage() {
     setBannerColorDraft(view.banner.color)
     setSavedAccent(view.accentColor)
     setAccentDraft(view.accentColor)
+    setSavedThemeMode(view.themeMode)
+    setThemeModeDraft(view.themeMode)
+    setHiddenNav(view.hiddenNav)
+    setSkillsOffered(view.skillsOffered)
+    setMcpOffered(view.mcpOffered)
     setFormats(view.formats)
   }
 
@@ -154,6 +173,11 @@ export default function AdminPage() {
     applyAccentColor(accentDraft)
     return () => { applyAccentColor(savedAccent) }
   }, [accentDraft, savedAccent])
+
+  useEffect(() => {
+    applyThemeMode(themeModeDraft)
+    return () => { applyThemeMode(visitorTheme) }
+  }, [themeModeDraft, visitorTheme])
 
   // Re-fetch just the gatekeeper/resource state (used to revert an optimistic toggle on error).
   // Leaves the General-tab drafts untouched.
@@ -281,6 +305,69 @@ export default function AdminPage() {
       toasts.add({ title: message, variant: 'error' })
     } finally {
       setSavingAccent(false)
+    }
+  }
+
+  const themeModeDirty = themeModeDraft !== savedThemeMode
+
+  const handleSaveThemeMode = async () => {
+    if (!admin) return
+    setSavingThemeMode(true)
+    try {
+      await admin.api.setThemeMode(themeModeDraft)
+      setSavedThemeMode(themeModeDraft)
+      toasts.add({ title: 'Theme saved', variant: 'success' })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save theme'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setSavingThemeMode(false)
+    }
+  }
+
+  const handleNavToggle = async (id: InstanceNavItemId, visible: boolean) => {
+    if (!admin) return
+    const previous = hiddenNav
+    setNavBusy(id)
+    setHiddenNav(visible ? previous.filter(item => item !== id) : [...previous, id])
+    try {
+      await admin.api.setNavItemVisible(id, visible)
+    } catch (err) {
+      setHiddenNav(previous)
+      const message = err instanceof Error ? err.message : 'Failed to update navigation'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setNavBusy(null)
+    }
+  }
+
+  const handleSkillsToggle = async (offered: boolean) => {
+    if (!admin) return
+    setSavingSkills(true)
+    setSkillsOffered(offered)
+    try {
+      await admin.api.setSkillsOffered(offered)
+    } catch (err) {
+      setSkillsOffered(!offered)
+      const message = err instanceof Error ? err.message : 'Failed to update skills'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setSavingSkills(false)
+    }
+  }
+
+  const handleMcpToggle = async (offered: boolean) => {
+    if (!admin) return
+    setSavingMcp(true)
+    setMcpOffered(offered)
+    try {
+      await admin.api.setMcpOffered(offered)
+    } catch (err) {
+      setMcpOffered(!offered)
+      const message = err instanceof Error ? err.message : 'Failed to update MCP'
+      toasts.add({ title: message, variant: 'error' })
+    } finally {
+      setSavingMcp(false)
     }
   }
 
@@ -480,6 +567,60 @@ export default function AdminPage() {
               />
             </div>
           </div>
+
+          <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-kumo-strong mb-1">Single sign-on</h2>
+            <p className="text-sm text-kumo-subtle">
+              {CF_ACCESS_MODE
+                ? 'This instance signs people in through Cloudflare Access. That is its SSO. Who may enter is the Access policy, not a password stored here.'
+                : !serverConfig
+                  ? 'Sign-in options load with the rest of this page.'
+                  : serverConfig.authVendors.length
+                    ? `Sign-in also offers ${serverConfig.authVendors.map(vendor => vendor.displayName).join(', ')}. Password login ${serverConfig.passwordAuthEnabled ? 'remains available' : 'is off'}.`
+                    : `Password login is ${serverConfig.passwordAuthEnabled ? 'on' : 'off'}. An identity-provider SSO is not connected on this build.`}
+              {' '}Changing the identity provider is a deployment setting, so a signed-in admin session cannot swap it.
+            </p>
+          </div>
+
+          <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-kumo-strong mb-1">SCIM</h2>
+            <p className="text-sm text-kumo-subtle">
+              Directory sync is not connected. SCIM would create and retire accounts when people join or leave your identity provider. It would not decide who is an admin, and it would not replace SSO. Connecting a directory is a deployment setting, separate from the switches on this page.
+            </p>
+          </div>
+
+          <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-kumo-strong mb-1">Skills and MCP</h2>
+            <p className="text-sm text-kumo-subtle mb-4">
+              Off until you turn them on, so people are not asked to pick skills or connect MCP servers. Applies on each user&rsquo;s next connection.
+            </p>
+            <div className="divide-y divide-kumo-line">
+              <div className="flex items-center justify-between gap-4 py-3">
+                <div>
+                  <p className="text-sm text-kumo-default">Skills</p>
+                  <p className="text-xs text-kumo-subtle">Show skills in the composer.</p>
+                </div>
+                <Switch
+                  aria-label="Offer skills"
+                  checked={skillsOffered}
+                  disabled={savingSkills}
+                  onCheckedChange={handleSkillsToggle}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 py-3">
+                <div>
+                  <p className="text-sm text-kumo-default">MCP</p>
+                  <p className="text-xs text-kumo-subtle">Show MCP connectors when connecting a service.</p>
+                </div>
+                <Switch
+                  aria-label="Offer MCP"
+                  checked={mcpOffered}
+                  disabled={savingMcp}
+                  onCheckedChange={handleMcpToggle}
+                />
+              </div>
+            </div>
+          </div>
         </>
       )}
 
@@ -577,10 +718,40 @@ export default function AdminPage() {
         <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
           <h2 className="text-lg font-semibold text-kumo-strong mb-1">Theme</h2>
           <p className="text-sm text-kumo-subtle mb-5">
-            Accent color used for buttons, links, and highlights. Changes preview live here; click
-            Save to apply for everyone (on their next connection). Backgrounds keep the default
-            warm theme.
+            Light or dark appearance, plus the accent used for buttons, links, and highlights.
+            Changes preview live here. Appearance is the default for people who have not picked
+            their own; the accent applies for everyone on their next connection.
           </p>
+
+          <p className="text-xs font-medium text-kumo-subtle mb-2">Appearance</p>
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            {(['system', 'light', 'dark'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={themeModeDraft === mode}
+                onClick={() => setThemeModeDraft(mode)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  themeModeDraft === mode
+                    ? 'border-kumo-default text-kumo-default bg-kumo-tint'
+                    : 'border-kumo-line text-kumo-subtle hover:bg-kumo-tint'
+                }`}
+              >
+                {mode === 'system' ? 'System' : mode === 'light' ? 'Light' : 'Dark'}
+              </button>
+            ))}
+            <div className="flex-1" />
+            {themeModeDirty && (
+              <Button variant="ghost" size="sm" onClick={() => setThemeModeDraft(savedThemeMode)} disabled={savingThemeMode}>
+                Reset
+              </Button>
+            )}
+            <Button variant="primary" size="sm" onClick={handleSaveThemeMode} loading={savingThemeMode} disabled={!themeModeDirty}>
+              Save
+            </Button>
+          </div>
+
+          <p className="text-xs font-medium text-kumo-subtle mb-2">Accent</p>
 
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {ACCENT_PRESETS.map((preset) => {
@@ -640,6 +811,29 @@ export default function AdminPage() {
             >
               Save
             </Button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'general' && (
+        <div className="bg-kumo-elevated border border-kumo-line rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-kumo-strong mb-1">Navigation</h2>
+          <p className="text-sm text-kumo-subtle mb-5">
+            Hide destinations this instance does not use. They leave the sidebar, search, and the
+            home shortcuts. Home stays available. Applies on each user&rsquo;s next connection.
+          </p>
+          <div className="divide-y divide-kumo-line">
+            {INSTANCE_NAV_ITEMS.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-4 py-3">
+                <span className="text-sm text-kumo-default">{item.label}</span>
+                <Switch
+                  aria-label={`Show ${item.label}`}
+                  checked={!hiddenNav.includes(item.id)}
+                  disabled={navBusy === item.id}
+                  onCheckedChange={(visible) => { void handleNavToggle(item.id, visible) }}
+                />
+              </div>
+            ))}
           </div>
         </div>
       )}

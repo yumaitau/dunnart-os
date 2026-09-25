@@ -6,6 +6,10 @@ multi-user service instead: users sign in with Google, GitHub, or Cloudflare, ev
 free daily allowance of AI usage, and once that runs out they connect their own Cloudflare account
 and top up credits in the Cloudflare dashboard (their account is then billed for further usage).
 
+For direct enterprise OIDC and SCIM provisioning, see [enterprise identity](enterprise-identity.md).
+It also covers Cloudflare Access federation with OIDC/SAML providers. The authentication
+gatekeepers below are separate sign-in options.
+
 Sign-in is provided by **authentication gatekeepers**: each auth-capable gatekeeper (Google, GitHub,
 Cloudflare) uses its single OAuth app both to authenticate the user (by verified email) and to
 connect the account's capabilities. There's no single switch — the pieces turn on independently:

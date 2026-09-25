@@ -6,6 +6,7 @@ import { ChatComposer } from "../features/chat/composer/ChatComposer";
 import MeshBackground from "../components/MeshBackground";
 import HomeTaskSuggestions from "../components/AppShell/HomeTaskSuggestions";
 import { useAuthenticatedApi } from "../AuthContext";
+import { useHiddenNav } from "../ServerConfigContext";
 import { RpcStub } from "capnweb";
 import {
   Overseer,
@@ -43,6 +44,7 @@ export function HomePageContent({ prompt }: HomeSearch) {
   useDocumentTitle("Home");
 
   const { authenticatedApi, currentUser } = useAuthenticatedApi();
+  const hiddenNav = useHiddenNav();
   const navigate = useNavigate();
   const toasts = useKumoToastManager();
 
@@ -201,16 +203,22 @@ export function HomePageContent({ prompt }: HomeSearch) {
         />
 
         {/* A few example work tasks to spark ideas. Picking one seeds the composer above. */}
-        <nav aria-label="Tasks and calendar" className="grid grid-cols-2 gap-3">
-          <Link to="/tasks" className="rounded-xl border border-kumo-line bg-kumo-elevated px-4 py-3 text-left transition-colors hover:bg-kumo-tint">
-            <span className="block text-[14px] font-semibold text-kumo-default">Tasks</span>
-            <span className="mt-1 block text-[13px] text-kumo-subtle">Open work, due dates, and priority.</span>
-          </Link>
-          <Link to="/calendar" className="rounded-xl border border-kumo-line bg-kumo-elevated px-4 py-3 text-left transition-colors hover:bg-kumo-tint">
-            <span className="block text-[14px] font-semibold text-kumo-default">Calendar</span>
-            <span className="mt-1 block text-[13px] text-kumo-subtle">The week, with tasks on the hours they fall.</span>
-          </Link>
-        </nav>
+        {(!hiddenNav.has("tasks") || !hiddenNav.has("calendar")) && (
+          <nav aria-label="Tasks and calendar" className="grid grid-cols-2 gap-3">
+            {!hiddenNav.has("tasks") && (
+              <Link to="/tasks" className="rounded-xl border border-kumo-line bg-kumo-elevated px-4 py-3 text-left transition-colors hover:bg-kumo-tint">
+                <span className="block text-[14px] font-semibold text-kumo-default">Tasks</span>
+                <span className="mt-1 block text-[13px] text-kumo-subtle">Open work, due dates, and priority.</span>
+              </Link>
+            )}
+            {!hiddenNav.has("calendar") && (
+              <Link to="/calendar" className="rounded-xl border border-kumo-line bg-kumo-elevated px-4 py-3 text-left transition-colors hover:bg-kumo-tint">
+                <span className="block text-[14px] font-semibold text-kumo-default">Calendar</span>
+                <span className="mt-1 block text-[13px] text-kumo-subtle">The week, with tasks on the hours they fall.</span>
+              </Link>
+            )}
+          </nav>
+        )}
 
         <HomeTaskSuggestions
           onPick={(suggestion) =>

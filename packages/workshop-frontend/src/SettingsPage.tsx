@@ -1,3 +1,5 @@
+import { SecuritySettings } from './features/auth/SecuritySettings'
+import { useServerConfig } from './ServerConfigContext'
 import { useKumoToastManager } from '@cloudflare/kumo'
 import { useAuthenticatedApi } from './AuthContext'
 import { useState, useEffect, useRef } from 'react'
@@ -89,6 +91,7 @@ export default function SettingsPage() {
   useDocumentTitle('Profile')
 
   const { authenticatedApi } = useAuthenticatedApi()
+  const betterAuth = useServerConfig()?.betterAuthEnabled
   const toasts = useKumoToastManager()
   const [userInfo, setUserInfo] = useState<AiChatAuthorInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -382,8 +385,9 @@ export default function SettingsPage() {
         {/* Usage & billing — only when the Cloudflare limits flow is enabled server-side */}
         <UsageSettings />
 
+        {betterAuth && <SecuritySettings />}
         {/* Security — only for password accounts (hidden under CF Access or gatekeeper sign-in) */}
-        {!CF_ACCESS_MODE && hasPassword === true && (
+        {!betterAuth && !CF_ACCESS_MODE && hasPassword === true && (
           <section className="flex flex-col gap-3">
             <SectionLabel>Security</SectionLabel>
             <div className="rounded-xl border border-kumo-line bg-kumo-base p-5">

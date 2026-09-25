@@ -242,20 +242,22 @@ function AppWithConnection() {
   }, [serverConfig]);
 
   return (
-    <ThemeProvider>
-      <RpcContext.Provider value={rpcState}>
-        <ServerConfigErrorContext.Provider value={serverConfigError}>
-          <ServerConfigContext.Provider value={serverConfig}>
+    <RpcContext.Provider value={rpcState}>
+      <ServerConfigErrorContext.Provider value={serverConfigError}>
+        <ServerConfigContext.Provider value={serverConfig}>
+          <ThemeProvider>
             <div className="app-viewport flex min-w-0 flex-col overflow-hidden">
               <AnnouncementBanner />
               <div className="h-full min-h-0 flex-1">
-                <RouterProvider router={router} />
+                {serverConfig ? <RouterProvider router={router} /> : <div role="status" className="flex h-full items-center justify-center text-kumo-subtle">
+                  {serverConfigError ? 'Could not load sign-in settings. Reload to retry.' : 'Loading…'}
+                </div>}
               </div>
             </div>
-          </ServerConfigContext.Provider>
-        </ServerConfigErrorContext.Provider>
-      </RpcContext.Provider>
-    </ThemeProvider>
+          </ThemeProvider>
+        </ServerConfigContext.Provider>
+      </ServerConfigErrorContext.Provider>
+    </RpcContext.Provider>
   );
 }
 

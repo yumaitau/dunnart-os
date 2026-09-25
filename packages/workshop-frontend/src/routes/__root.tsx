@@ -69,6 +69,7 @@ function RootComponent() {
         >
           Retry
         </button>
+        <button onClick={logout} className="text-sm underline">Sign out</button>
       </div>
     )
   }

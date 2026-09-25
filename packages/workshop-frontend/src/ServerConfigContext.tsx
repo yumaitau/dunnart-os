@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useMemo } from 'react'
 import { ServerConfig, AuthVendorInfo, resolveSiteName } from '@gadgets/workshop-shared/api'
 
 /**
@@ -34,4 +34,10 @@ export function useAuthVendors(): AuthVendorInfo[] {
 /** Convenience: whether the Cloudflare limits / top-up flow is enabled. */
 export function useCloudflareLimitsEnabled(): boolean {
   return useContext(ServerConfigContext)?.cloudflareLimitsEnabled ?? false
+}
+
+/** Navigation ids the deployment admin has hidden. Empty until config loads. */
+export function useHiddenNav(): ReadonlySet<string> {
+  const hidden = useContext(ServerConfigContext)?.hiddenNav
+  return useMemo(() => new Set(hidden ?? []), [hidden])
 }

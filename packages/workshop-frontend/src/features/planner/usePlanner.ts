@@ -21,7 +21,7 @@ function disposeSession(session: Session | null) {
 function ownedPlanner(outputs: OutputSummary[]): OutputSummary | undefined {
   return outputs
     .filter((output) => output.output?.id === "planner" && output.owner === undefined)
-    .sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime())[0];
+    .toSorted((a, b) => b.lastActive.getTime() - a.lastActive.getTime())[0];
 }
 
 async function openSession(authenticatedApi: RpcStub<AuthenticatedApi>): Promise<Session> {

@@ -5,6 +5,7 @@ import {
   type RefObject, type SetStateAction,
 } from "react";
 import type { Overseer, SlashCommandChoice } from "@gadgets/workshop-shared/api";
+import { useServerConfig } from "../../../../ServerConfigContext";
 import { ArrowsInIcon, CaretRightIcon, ScrollIcon } from "@phosphor-icons/react";
 import { PICKER_EMPTY, TabHint } from "../../../../components/pickerRows";
 import {
@@ -72,6 +73,7 @@ export function useSlashCommandPicker({
    */
   chatExists: boolean;
 }) {
+  const skillsOffered = useServerConfig()?.skillsOffered === true;
   const [choices, setChoices] = useState<SlashCommandChoice[]>([]);
   const [choicesQuery, setChoicesQuery] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -151,7 +153,7 @@ export function useSlashCommandPicker({
   }, [getOverseer]);
 
   useEffect(() => {
-    if (!parsed) {
+    if (!skillsOffered || !parsed) {
       setChoices([]);
       setChoicesQuery(null);
       setLoading(false);
@@ -178,7 +180,7 @@ export function useSlashCommandPicker({
     return () => {
       cancelled = true;
     };
-  }, [catalogGeneration, loadCatalog, offerable, parsed !== null, query]);
+  }, [catalogGeneration, loadCatalog, offerable, parsed !== null, query, skillsOffered]);
 
   useEffect(() => {
     if (exactIndex >= 0) setIndex(exactIndex);

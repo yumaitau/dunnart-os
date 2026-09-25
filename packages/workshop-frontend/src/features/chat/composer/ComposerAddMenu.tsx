@@ -19,6 +19,7 @@ import {
   ScrollIcon,
 } from "@phosphor-icons/react";
 import type { SlashCommandChoice } from "@gadgets/workshop-shared/api";
+import { useServerConfig } from "../../../ServerConfigContext";
 import { isImeComposing } from "../../../keyboardEvent";
 import { filterSlashCommandCatalog } from "./slash-commands/slashCommandInput";
 import {
@@ -103,7 +104,8 @@ export default function ComposerAddMenu({
   const searchRef = useRef<HTMLInputElement>(null);
   const catalogVersionRef = useRef(catalogVersion);
   const listboxId = useId();
-  const skillsAvailable = !skillSelected;
+  const skillsOffered = useServerConfig()?.skillsOffered === true;
+  const skillsAvailable = skillsOffered && !skillSelected;
   const hasQuery = query.trim().length > 0;
   const catalog = loadedCatalog?.source === getOverseer ? loadedCatalog.choices : [];
 

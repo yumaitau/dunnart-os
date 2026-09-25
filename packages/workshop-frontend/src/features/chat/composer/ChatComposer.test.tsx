@@ -15,6 +15,10 @@ const testState = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("../../../ServerConfigContext", () => ({
+  useServerConfig: () => ({ skillsOffered: true }),
+}));
+
 vi.mock("@cloudflare/kumo", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@cloudflare/kumo")>()),
   useKumoToastManager: () => ({ add: testState.addToast }),

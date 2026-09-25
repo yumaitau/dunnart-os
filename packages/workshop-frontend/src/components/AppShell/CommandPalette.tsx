@@ -10,6 +10,7 @@ import {
 } from '@phosphor-icons/react'
 import { useKumoToastManager } from '@cloudflare/kumo'
 import { useAuthenticatedApi } from '../../AuthContext'
+import { useHiddenNav } from '../../ServerConfigContext'
 import type { GadgetMetadataWithTimestamps, OutputFormatOffer } from '@gadgets/workshop-shared/api'
 import { FormatGlyph } from '../format/FormatVisuals'
 import { createFromFormat } from '../format/useOutputFormats'
@@ -144,6 +145,7 @@ export default function CommandPalette({
   onClose: () => void
 }) {
   const { authenticatedApi } = useAuthenticatedApi()
+  const hiddenNav = useHiddenNav()
   const navigate = useNavigate()
   const toasts = useKumoToastManager()
 
@@ -237,13 +239,13 @@ export default function CommandPalette({
     }))
 
     const nav: Command[] = [
-      {
+      !hiddenNav.has('tasks') && {
         id: 'nav-tasks',
         label: 'Tasks',
         icon: <ClipboardText size={15} />,
         run: () => navigate({ to: '/tasks' }),
       },
-      {
+      !hiddenNav.has('calendar') && {
         id: 'nav-calendar',
         label: 'Calendar',
         icon: <CalendarDots size={15} />,
@@ -256,19 +258,19 @@ export default function CommandPalette({
         run: () => navigate({ to: '/' }),
       },
       ...formatCommands,
-      {
+      !hiddenNav.has('workspaces') && {
         id: 'nav-workspaces',
         label: 'Workspaces',
         icon: <SquaresFour size={15} />,
         run: () => navigate({ to: '/workspaces' }),
       },
-      {
+      !hiddenNav.has('blueprints') && !hiddenNav.has('explore') && {
         id: 'nav-blueprints',
         label: 'Blueprints',
         icon: <Blueprint size={15} />,
         run: () => navigate({ to: '/explore' }),
       },
-    ]
+    ].filter((command): command is Command => Boolean(command))
 
     const wsBase: Command[] = gadgets
       .toSorted((a, b) => b.lastActive.getTime() - a.lastActive.getTime())
@@ -317,7 +319,7 @@ export default function CommandPalette({
     const groups = built.filter((g) => g.items.length > 0)
     const flat = groups.flatMap((g) => g.items)
     return { groups, flat }
-  }, [query, gadgets, blueprints, formats, navigate, createFormat])
+  }, [query, gadgets, blueprints, formats, navigate, createFormat, hiddenNav])
 
   // Keep the active index in range as the result set changes.
   useEffect(() => {

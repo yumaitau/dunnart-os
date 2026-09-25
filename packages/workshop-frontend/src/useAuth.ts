@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { RpcStub } from 'capnweb'
 import { PublicApi, AuthenticatedApi } from '@gadgets/workshop-shared/api'
+import { useServerConfig } from './ServerConfigContext'
+import { authClient } from './features/auth/authClient'
 import { setReportedUserId } from './errorReporting'
 
 const CF_ACCESS_MODE = import.meta.env.VITE_CF_ACCESS_MODE === 'true'
@@ -15,6 +17,7 @@ interface AuthState {
 export { CF_ACCESS_MODE }
 
 export function useAuth(publicApi: RpcStub<PublicApi>) {
+  const serverConfig = useServerConfig()
   const [authState, setAuthState] = useState<AuthState>({
     token: null,
     authenticatedApi: null,
@@ -56,6 +59,17 @@ export function useAuth(publicApi: RpcStub<PublicApi>) {
   }, [authState.authenticatedApi])
 
   useEffect(() => {
+    if (serverConfig?.betterAuthEnabled) {
+      let cancelled = false
+      const result = publicApi.authenticateFromSession()
+      result.then(api => {
+        if (cancelled) { api?.[Symbol.dispose](); return }
+        setAuthState({ token: null, authenticatedApi: api, isLoading: false, error: null })
+      }).catch(() => {
+        if (!cancelled) setAuthState({ token: null, authenticatedApi: null, isLoading: false, error: 'Session verification failed.' })
+      })
+      return () => { cancelled = true; authenticatedApiRef.current?.[Symbol.dispose]() }
+    }
     if (CF_ACCESS_MODE) {
       authenticateWithCfAccess()
     } else {
@@ -71,7 +85,7 @@ export function useAuth(publicApi: RpcStub<PublicApi>) {
       // updater, so this may double-dispose on reconnect. That's fine — dispose is idempotent.
       authenticatedApiRef.current?.[Symbol.dispose]()
     }
-  }, [publicApi])
+  }, [publicApi, serverConfig?.betterAuthEnabled])
 
   const authenticateWithCfAccess = () => {
     setAuthState(prev => {
@@ -125,6 +139,14 @@ export function useAuth(publicApi: RpcStub<PublicApi>) {
   const logout = () => {
     setReportedUserId(undefined)
 
+    if (serverConfig?.betterAuthEnabled) {
+      void authClient.signOut().then(result => {
+        if (result.error) throw new Error(result.error.message)
+        localStorage.removeItem('authToken')
+        window.location.assign('/')
+      }).catch(() => setAuthState(prev => ({ ...prev, error: 'Sign-out failed. Try again.' })))
+      return
+    }
     if (CF_ACCESS_MODE) {
       window.location.assign('/cdn-cgi/access/logout')
       return

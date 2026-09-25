@@ -26,6 +26,14 @@ export function getSystemThemeMode(): ResolvedThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+export function hasStoredThemeMode(): boolean {
+  try {
+    return isThemeMode(window.localStorage.getItem(THEME_MODE_STORAGE_KEY))
+  } catch {
+    return false
+  }
+}
+
 export function readThemeMode(): ThemeMode {
   try {
     const stored = window.localStorage.getItem(THEME_MODE_STORAGE_KEY)

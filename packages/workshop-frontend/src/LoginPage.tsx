@@ -8,6 +8,7 @@ import { useServerConfig, useServerConfigError, useSiteName } from './ServerConf
 import { useDocumentTitle } from './useDocumentTitle'
 import { useConnectionLost } from './RpcContext'
 import OAuthButtons from './components/auth/OAuthButtons'
+import { BetterLogin } from './features/auth/BetterLogin'
 import SiteLogo from './components/SiteLogo'
 import DunnartMark from './components/DunnartMark'
 
@@ -27,6 +28,8 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
   const siteName = useSiteName()
   const connectionLost = useConnectionLost()
   useDocumentTitle('Sign in')
+
+  if (serverConfig?.betterAuthEnabled) return <BetterLogin />
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()

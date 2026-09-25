@@ -11,7 +11,7 @@ import {
   SquaresFour,
   Stack,
 } from '@phosphor-icons/react'
-import { useSiteName } from '../../ServerConfigContext'
+import { useHiddenNav, useSiteName } from '../../ServerConfigContext'
 import SiteLogo from '../SiteLogo'
 import DunnartMark from '../DunnartMark'
 import { useGatekeeperApps } from '../../useGatekeeperApps'
@@ -44,6 +44,7 @@ export default function Sidebar({
   onToggleCollapsed: () => void
 }) {
   const siteName = useSiteName()
+  const hiddenNav = useHiddenNav()
   // Gatekeeper-served management apps the user can reach now (one per gatekeeper that provides a UI
   // and is connected / enabled for everyone). Disabled or not-yet-connected ones aren't returned, so
   // they simply don't appear. The set is fully dynamic — no gatekeeper is hardcoded.
@@ -119,42 +120,52 @@ export default function Sidebar({
         <div className="flex shrink-0 flex-col gap-3 pt-3">
           {/* Primary nav */}
           <nav className="flex flex-col gap-0.5 px-2">
-            <SidebarItem
-              to="/tasks"
-              label="Tasks"
-              icon={<ClipboardText size={14} weight="regular" />}
-              collapsed={collapsed}
-            />
-            <SidebarItem
-              to="/calendar"
-              label="Calendar"
-              icon={<CalendarDots size={14} weight="regular" />}
-              collapsed={collapsed}
-            />
+            {!hiddenNav.has('tasks') && (
+              <SidebarItem
+                to="/tasks"
+                label="Tasks"
+                icon={<ClipboardText size={14} weight="regular" />}
+                collapsed={collapsed}
+              />
+            )}
+            {!hiddenNav.has('calendar') && (
+              <SidebarItem
+                to="/calendar"
+                label="Calendar"
+                icon={<CalendarDots size={14} weight="regular" />}
+                collapsed={collapsed}
+              />
+            )}
             <SidebarItem
               to="/"
               label="Home"
               icon={<House size={14} weight="regular" />}
               collapsed={collapsed}
             />
-            <SidebarItem
-              to="/workspaces"
-              label="Workspaces"
-              icon={<SquaresFour size={14} weight="regular" />}
-              collapsed={collapsed}
-            />
-            <SidebarItem
-              to="/blueprints"
-              label="Blueprints"
-              icon={<Blueprint size={14} weight="regular" />}
-              collapsed={collapsed}
-            />
-            <SidebarItem
-              to="/outputs"
-              label="Outputs"
-              icon={<Stack size={14} weight="regular" />}
-              collapsed={collapsed}
-            />
+            {!hiddenNav.has('workspaces') && (
+              <SidebarItem
+                to="/workspaces"
+                label="Workspaces"
+                icon={<SquaresFour size={14} weight="regular" />}
+                collapsed={collapsed}
+              />
+            )}
+            {!hiddenNav.has('blueprints') && (
+              <SidebarItem
+                to="/blueprints"
+                label="Blueprints"
+                icon={<Blueprint size={14} weight="regular" />}
+                collapsed={collapsed}
+              />
+            )}
+            {!hiddenNav.has('outputs') && (
+              <SidebarItem
+                to="/outputs"
+                label="Outputs"
+                icon={<Stack size={14} weight="regular" />}
+                collapsed={collapsed}
+              />
+            )}
             {/* Gatekeeper management apps (e.g. the Context Library), listed dynamically. */}
             {gatekeeperApps.map((app) => {
               // Escape the icon URL for safe interpolation into a CSS url("…") string.
@@ -194,12 +205,14 @@ export default function Sidebar({
               />
               )
             })}
-            <SidebarItem
-              to="/explore"
-              label="Explore"
-              icon={<Compass size={14} weight="regular" />}
-              collapsed={collapsed}
-            />
+            {!hiddenNav.has('explore') && (
+              <SidebarItem
+                to="/explore"
+                label="Explore"
+                icon={<Compass size={14} weight="regular" />}
+                collapsed={collapsed}
+              />
+            )}
           </nav>
 
           {/* Workspace tools: search. Pinned so it's always reachable. */}
