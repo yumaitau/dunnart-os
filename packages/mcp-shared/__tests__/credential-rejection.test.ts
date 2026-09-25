@@ -43,7 +43,7 @@ describe("safeOAuthError", () => {
   it("redacts a confidential client's secret and Basic credential", () => {
     const client = {
       client_id: "client:name",
-      client_secret: "cs/secret+0123456789",
+      client_secret: "cs/secret+0123456789", // gitleaks:allow -- synthetic test fixture
     };
     const basic = btoa(`${client.client_id}:${client.client_secret}`);
     const err = safeOAuthError(

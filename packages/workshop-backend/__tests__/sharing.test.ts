@@ -173,7 +173,7 @@ describe("redeemShareKey", () => {
     let { storage, mgr } = makeManager();
     // A syntactically-valid raw key (hex) that was never created.
     await mgr.redeemShareKey({
-      rawKey: "00112233445566778899aabbccddeeff", profileId: "a",
+      rawKey: "00112233445566778899aabbccddeeff", profileId: "a", // gitleaks:allow -- synthetic test fixture
       fetchProfile: async () => profile("a"),
     });
     expect(storage.collaborators.get("a")).toBeUndefined();
@@ -730,7 +730,7 @@ describe("ownerInvitesOnly", () => {
     let { storage, flags, mgr } = makeManagerWithFlag();
     flags.ownerInvitesOnly = true;
     await mgr.redeemShareKey({
-      rawKey: "00112233445566778899aabbccddeeff", profileId: "a",
+      rawKey: "00112233445566778899aabbccddeeff", profileId: "a", // gitleaks:allow -- synthetic test fixture
       fetchProfile: async () => profile("a"),
     });
     expect(storage.collaborators.get("a")).toBeUndefined();

@@ -591,7 +591,7 @@ describe("error text a server wrote", () => {
     // A server that quotes the request's Authorization header inside an error -- carelessly or
     // deliberately -- would otherwise have this Worker copy its own bearer token into an error
     // message, which callers log wholesale and may forward to the issue reporter.
-    const token = "sk-live-000111222333444555";
+    const token = "sk-live-000111222333444555"; // gitleaks:allow -- synthetic test fixture
     stubError(`bad request: Authorization: Bearer ${token}`);
     const client = new McpClient("https://mcp.example.com/mcp", async () => token);
 
