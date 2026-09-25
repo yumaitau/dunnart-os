@@ -43,7 +43,7 @@ export function addDays(date: Date, days: number): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 }
 
-/** Monday-start week, matching RangerOS `en-au`. */
+/** Monday-start week for the Australian locale. */
 export function startOfWeek(date: Date): Date {
   const day = date.getDay();
   const delta = day === 0 ? -6 : 1 - day;
@@ -114,7 +114,7 @@ export function calendarItems(tasks: PlannerTask[], events: PlannerEvent[]): Cal
     priority: "normal",
     event,
   }));
-  return [...fromTasks, ...fromEvents].sort((a, b) => {
+  return [...fromTasks, ...fromEvents].toSorted((a, b) => {
     const time = (a.time ?? "99:99").localeCompare(b.time ?? "99:99");
     return time || a.title.localeCompare(b.title);
   });
@@ -165,7 +165,7 @@ export function filterTasks(
       if (due === "week") return task.dueDate >= todayKey && task.dueDate <= weekEnd;
       return task.dueDate < todayKey && task.status !== "done";
     })
-    .sort((a, b) => {
+    .toSorted((a, b) => {
       const date = (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
       if (date) return date;
       return PRIORITY_RANK[taskPriority(b)] - PRIORITY_RANK[taskPriority(a)];
