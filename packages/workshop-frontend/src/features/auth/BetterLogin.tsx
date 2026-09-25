@@ -6,7 +6,7 @@ import { useServerConfig, useSiteName } from '../../ServerConfigContext'
 export const BetterLogin = () => {
   const config = useServerConfig()
   const siteName = useSiteName()
-  const migrating = new URLSearchParams(window.location.search).has('migrate')
+  const migrating = config?.accessMigrationEnabled === true && new URLSearchParams(window.location.search).has('migrate')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')

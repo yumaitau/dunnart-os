@@ -196,6 +196,9 @@ describe("Better Auth integration", () => {
       expect((await auth.handler(request("/sign-up/email", { name: "Test", email: "nobody@example.com", password: "long-test-password" }))).status).toBe(400);
       expect((await auth.handler(request("/sign-in/email", { email: "nobody@example.com", password: "long-test-password" }, "https://evil.example"))).status).toBe(403);
       expect((await auth.handler(request("/access-migration", { password: "long-test-password" }))).status).toBe(404);
+      const migrationDisabled = { ...config(), ACCESS_MIGRATION_ENABLED: "false" };
+      expect((await handleBetterAuth(request("/access-migration", { password: "long-test-password" }), migrationDisabled, state)).status).toBe(404);
+      expect((await handleBetterAuth(new Request(`${origin}/api/auth/access-entry`), migrationDisabled, state)).status).toBe(404);
       expect((await handleBetterAuth(request("/sso/register", {}), config(), state)).status).toBe(404);
     });
   });
