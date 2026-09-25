@@ -33,6 +33,8 @@
     }
   ],
 
+  "ai": { "binding": "AI" },
+
   // Optional: add an Artifacts binding named ARTIFACTS to enable Git-backed collections.
   "observability": {
     "enabled": true,

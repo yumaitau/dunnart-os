@@ -4,9 +4,16 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [capnwebValidate(), cloudflareTest({
+    main: "./__tests__/worker.ts",
     miniflare: {
       compatibilityDate: "2026-09-04",
       compatibilityFlags: ["nodejs_compat", "allow_irrevocable_stub_storage"],
+      kvNamespaces: ["CONTEXT_COLLECTIONS"],
+      durableObjects: {
+        COLLECTIONS: { className: "ContextCollectionDurableObject", useSQLite: true },
+        LIBRARIES: { className: "UserLibraryDurableObject", useSQLite: true },
+        REGISTRY: { className: "LibraryRegistryDurableObject", useSQLite: true },
+      },
     },
   })],
   test: {

@@ -268,7 +268,19 @@ const EXTENSION_CONTENT_TYPES: Record<string, string> = {
   ico: "image/x-icon",
   bmp: "image/bmp",
   pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  doc: "application/msword",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
+
+/** Uploaded document formats supported by Workers AI Markdown conversion. */
+export function isExtractableDocument(contentType: string): boolean {
+  return ["pdf", "docx", "xlsx", "odt", "ods"].some(extension =>
+    EXTENSION_CONTENT_TYPES[extension] === contentType.split(";", 1)[0].trim().toLowerCase());
+}
 
 /** Derive a MIME type from a path's file extension, defaulting to markdown. */
 export function contentTypeFromPath(path: string): string {

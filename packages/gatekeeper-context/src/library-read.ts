@@ -9,12 +9,13 @@ import type {
 } from "@gadgets/workshop-shared/gatekeeper";
 import {
   ContextSearchResult, ContextListing, ContextListingEntry, ContextReadResult,
-  ContextCollectionVisibility, decodeDocId, encodeDocId, isTextContentType, VENDOR_ID,
+  ContextCollectionVisibility, decodeDocId, encodeDocId, isTextContentType, isExtractableDocument, VENDOR_ID,
 } from "./context-types.js";
 import type { ContextCollectionDurableObject } from "./context-collection.js";
 import type { UserLibraryDurableObject } from "./user-library.js";
 import { domainName } from "./domain.js";
 import { obsContext } from "./observability.js";
+import { searchLimit } from "./context-search.js";
 
 const logger = obsContext.createLogger({
   component: "gatekeeper.context", vendorId: VENDOR_ID,
@@ -33,7 +34,6 @@ type ObserveCollections = (collectionIds: string[]) => Promise<{
 export class LibraryReadSession extends RpcTarget {
   // Per-session enabled set. Visibility is retained by the source API, though observer enforcement
   // uses collection-level access checks rather than the old sticky sharing prohibition.
-  #enabledPromise?: Promise<Map<string, ContextCollectionVisibility>>;
 
   constructor(
     private collections: DurableObjectNamespace<ContextCollectionDurableObject>,
@@ -59,9 +59,9 @@ export class LibraryReadSession extends RpcTarget {
     return this.userLibraries.get(this.userLibraries.idFromName(domainName(this.domain, this.accountId)));
   }
 
-  // Computed once per session; search/list/read share it.
+  // Re-read enablement so a retained agent session cannot read a disabled collection.
   #enabled(): Promise<Map<string, ContextCollectionVisibility>> {
-    return (this.#enabledPromise ??= this.#userLib().getEnabledCollections(this.domain));
+    return this.#userLib().getEnabledCollections(this.domain);
   }
 
   async #authorize(
@@ -80,7 +80,7 @@ export class LibraryReadSession extends RpcTarget {
     limit?: number;
   }): Promise<ContextSearchResult[]> {
     let enabled = await this.#enabled();
-    let limit = opts?.limit ?? 20;
+    let limit = searchLimit(opts?.limit);
 
     let targetIds: string[];
     if (opts?.collectionId) {
@@ -127,6 +127,32 @@ export class LibraryReadSession extends RpcTarget {
     return results;
   }
 
+  /** Retrieve bounded source passages for answers grounded in uploaded documents. */
+  async retrieve(query: string, opts?: { collectionId?: string; limit?: number }): Promise<{
+    docId: string; collectionId: string; path: string; offset: number; content: string; score: number;
+  }[]> {
+    const enabled = await this.#enabled();
+    const limit = Math.min(searchLimit(opts?.limit ?? 5), 10);
+    if (!limit) return [];
+    const ids = opts?.collectionId
+      ? (enabled.has(opts.collectionId) ? [opts.collectionId] : []) : [...enabled.keys()];
+    const pages = await mapWithConcurrency(ids, MAX_COLLECTION_FANOUT, async collectionId => {
+      const passages = await this.#collection(collectionId).retrieve(query, limit);
+      return passages.map(passage => ({
+        docId: encodeDocId(collectionId, passage.path), collectionId,
+        path: passage.path, offset: passage.offset, content: passage.body, score: passage.score,
+      }));
+    });
+    const results = pages.flat().toSorted((a, b) => b.score - a.score).slice(0, limit);
+    if (results.length) {
+      await this.#authorize([...new Set(results.map(result => result.collectionId))], {
+        title: "Knowledge base retrieval",
+        description: `Retrieved ${results.length} source passage(s) from the Context Library.`,
+      });
+    }
+    return results;
+  }
+
   async list(opts?: {
     collectionId?: string;
     path?: string;
@@ -170,9 +196,11 @@ export class LibraryReadSession extends RpcTarget {
       description: `Read Context Library document \`${docId}\`.`,
     });
 
-    let content = isTextContentType(doc.contentType)
+    let extractedText = isExtractableDocument(doc.contentType)
+      ? await this.#collection(collectionId).getIndexedText(path) : null;
+    let content = extractedText ?? (isTextContentType(doc.contentType)
       ? doc.body
-      : `data:${doc.contentType};base64,${doc.body}`;
+      : `data:${doc.contentType};base64,${doc.body}`);
     return {
       docId,
       title: doc.name,

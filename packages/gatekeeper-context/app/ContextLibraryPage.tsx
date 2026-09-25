@@ -767,7 +767,7 @@ function CreateCollectionView({
           className="press mb-3 -ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[13px] font-medium tracking-[-0.25px] text-kumo-subtle transition-colors hover:text-kumo-default"
         >
           <CaretLeft size={14} />
-          Context &amp; Skills
+          Knowledge &amp; Context
         </button>
         <h1 className="text-2xl font-semibold tracking-tight text-kumo-default">
           New collection
@@ -1016,10 +1016,10 @@ export default function ContextLibraryPage() {
       <header className="flex items-end justify-between gap-4 px-3 pb-3 pt-10">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-kumo-default">
-            Context &amp; Skills
+            Knowledge &amp; Context
           </h1>
           <p className="mt-1 max-w-2xl text-[13px] leading-[18px] tracking-[-0.25px] text-kumo-subtle">
-            Collections of documents, skills, and other files your agents can use.
+            Search uploaded documents and use them as sources in agent answers. Organize skills alongside them.
           </p>
         </div>
         {enabled.length > 0 && (
@@ -1245,7 +1245,7 @@ function CollectionOverview({
                       ? "This git mirror is empty. Mirror content from git, then refresh."
                       : "No Git content was cached before synchronization became unavailable."
                     : canWrite
-                    ? "Use the + in the Files panel to create or upload skills or files. Agents use the names and descriptions to decide what to read."
+                    ? "Use + in the Files panel to upload text, PDF, DOCX, XLSX, ODT or ODS documents. Agents can search their contents and cite the source."
                     : "This collection is empty."}
                 </p>
               </div>
@@ -2470,6 +2470,7 @@ function CollectionEditor({
   const uploadFiles = async (files: FileList) => {
     let ok = 0,
       failed = 0;
+    let firstError = "";
     await runWithConcurrency(Array.from(files), 6, async (file) => {
       const rel = (file as any).webkitRelativePath || file.name;
       // Derive the type from the path (its extension), not the browser-reported file.type, so the
@@ -2486,12 +2487,13 @@ function CollectionEditor({
           contentType: ct,
         });
         ok++;
-      } catch {
+      } catch (error) {
         failed++;
+        if (!firstError) firstError = error instanceof Error ? error.message : "Upload failed";
       }
     });
     toasts.add({
-      title: `Uploaded ${pluralize(ok, "file")}${failed ? `, ${failed} failed` : ""}`,
+      title: `Uploaded ${pluralize(ok, "file")}${failed ? `, ${failed} failed: ${firstError}` : ""}`,
       variant: failed ? "error" : "success",
     });
     await loadDocs();
@@ -2542,7 +2544,7 @@ function CollectionEditor({
             className="press -ml-1 mb-4 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[13px] font-medium tracking-[-0.25px] text-kumo-subtle transition-colors hover:text-kumo-default"
           >
             <CaretLeft size={14} />
-            Context &amp; Skills
+            Knowledge &amp; Context
           </button>
           <div className="rounded-xl border border-kumo-line bg-kumo-base px-5 py-10 text-center shadow-[0_1px_2px_rgba(20,17,16,0.03)]">
             <BookOpen size={32} className="mx-auto mb-3 text-kumo-subtle" />
@@ -2648,7 +2650,7 @@ function CollectionEditor({
             className="press -ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[13px] font-medium tracking-[-0.25px] text-kumo-subtle transition-colors hover:text-kumo-default"
           >
             <CaretLeft size={14} />
-            Context &amp; Skills
+            Knowledge &amp; Context
           </button>
         </div>
           {metadata && (

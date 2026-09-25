@@ -114,6 +114,8 @@ export interface WranglerConfig {
   services?: ServiceBinding[];
   /** Browser Rendering binding (Gadget PDF exports). */
   browser?: BindingDecl;
+  /** Workers AI binding for document extraction and inference. */
+  ai?: BindingDecl;
   /** Artifacts binding — closed beta, cut from customer manifests. */
   artifacts?: BindingDecl;
   /** Static-asset serving config (the router). */
@@ -247,7 +249,7 @@ const HANDLED_CONFIG_KEYS = new Set([
   "assets", "vars",
   // Browser Rendering (Gadget PDF exports). Unlike artifacts it is generally available, so it
   // passes through to customer instances as a placeholder-free binding, like the AI binding.
-  "browser",
+  "browser", "ai",
   // gatekeeper-context's Artifacts binding is closed-beta and cannot be provisioned in arbitrary
   // user accounts; it is dropped from customer manifests (the gatekeeper degrades gracefully).
   "artifacts",
@@ -431,6 +433,9 @@ export function buildWorkerEntry(
   if (config.browser) {
     // `remote` is dev-only wrangler behavior; the deployed binding is just { type, name }.
     bindings.push({ type: "browser", name: config.browser.binding });
+  }
+  if (config.ai) {
+    bindings.push({ type: "ai", name: config.ai.binding });
   }
   for (const loader of config.worker_loaders ?? []) {
     bindings.push({ type: "worker_loader", name: loader.binding });

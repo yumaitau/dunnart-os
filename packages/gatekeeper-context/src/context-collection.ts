@@ -8,7 +8,7 @@ import {
   ContextDocument, ContextDocumentSummary,
   ContextGitTokenCreateResult, ContextGitTokenList,
   DEFAULT_DOCUMENT_CONTENT_TYPE, DEFAULT_GIT_BRANCH, MAX_DOCUMENT_BODY_BYTES,
-  contentTypeFromPath, isTextContentType, VENDOR_ID,
+  contentTypeFromPath, isTextContentType, isExtractableDocument, VENDOR_ID,
 } from "./context-types.js";
 import { metadataToSummary } from "./collection-kv.js";
 import { domainName } from "./domain.js";
@@ -22,6 +22,7 @@ import { obsContext } from "./observability.js";
 import {
   decodeStoredContextBody, encodeStoredContextBody, truncateContextDescription,
 } from "./context-storage.js";
+import { ContextSearchIndex, searchChunks, searchLimit } from "./context-search.js";
 
 const logger = obsContext.createLogger({
   component: "gatekeeper.context", vendorId: VENDOR_ID,
@@ -82,6 +83,7 @@ type ContextRecord = {
   // Text is stored as UTF-8 and binary as raw bytes to keep SQLite values close to source size.
   // Legacy records have string bodies: literal text or base64 for binary content.
   body: string | Uint8Array;
+  revision?: string;
   lastUpdated: Date;
 };
 
@@ -123,6 +125,7 @@ function makeContextCollectionStorage(storage: DurableObjectStorage) {
         content: { source: "web" },
       },
       skillIndexVersion: 0,
+      searchIndexVersion: 0,
     },
   });
 }
@@ -131,6 +134,7 @@ type ContextCollectionStorage = ReturnType<typeof makeContextCollectionStorage>;
 
 export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env> {
   private storage: ContextCollectionStorage;
+  private searchIndex: ContextSearchIndex;
   // Set when an artifact refresh operation is in flight. Additional refresh requests should
   // await this promise when set instead of kicking off additional concurrent refreshes.
   #artifactRefresh?: Promise<void>;
@@ -138,6 +142,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env);
     this.storage = makeContextCollectionStorage(ctx.storage);
+    this.searchIndex = new ContextSearchIndex(ctx.storage.sql);
   }
 
   // Sharing domain for all cross-DO/KV references.
@@ -203,6 +208,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
     this.storage.metadata.put(metadata);
     // A new collection starts with an up-to-date empty path list.
     this.storage.skillIndexVersion.put(SKILL_INDEX_VERSION);
+    this.storage.searchIndexVersion.put(1);
     return metadata;
   }
 
@@ -243,15 +249,40 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   // Save a document and update its skill entry together.
-  #putDocument(record: ContextRecord): void {
-    this.storage.documents.put(record);
+  #putDocument(record: ContextRecord, extractedText?: string): void {
+    this.storage.documents.put({ ...record, revision: crypto.randomUUID() });
     this.#updateSkillIndex(record);
+    this.#indexDocument(record, extractedText);
   }
 
   // Delete a document and its skill entry together.
   #deleteDocument(path: string): void {
     this.storage.documents.delete(path);
     this.storage.skillIndex.delete(path);
+    this.searchIndex.remove(path);
+  }
+
+  #indexDocument(record: ContextRecord, extractedText?: string): void {
+    const contentType = record.contentType ?? DEFAULT_DOCUMENT_CONTENT_TYPE;
+    const body = isTextContentType(contentType)
+      ? decodeStoredContextBody(contentType, record.body)
+      : extractedText ?? "";
+    this.searchIndex.replace(record.path, record.name, record.description, body);
+  }
+
+  #ensureSearchIndex(): void {
+    if (this.storage.searchIndexVersion.get() === 1) return;
+    this.storage.transaction(() => {
+      this.searchIndex.clear();
+      for (const record of this.storage.documents.list()) this.#indexDocument(record);
+      this.storage.searchIndexVersion.put(1);
+    });
+  }
+
+  /** Agent-readable document extraction from the same index used by search. */
+  getIndexedText(path: string): string | null {
+    this.#ensureSearchIndex();
+    return this.searchIndex.read(path);
   }
 
   #clearSkillIndex(): void {
@@ -386,10 +417,33 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
       throw new Error(`Document is too large (${byteLength} bytes; max ${MAX_DOCUMENT_BODY_BYTES}).`);
     }
 
+    this.#ensureSearchIndex();
+    const collectionId = this.getMetadata().id;
+    const previous = this.storage.documents.get(path);
+    const revision = previous?.revision ?? previous?.lastUpdated.getTime();
+    let extractedText: string | undefined;
+    if (isExtractableDocument(contentType)) {
+      if (!this.env.AI) throw new Error("Document indexing needs the Context Library AI binding.");
+      const converted = await this.env.AI.toMarkdown({
+        name: record.name,
+        blob: new Blob([record.body], { type: contentType }),
+      });
+      if (converted.format === "error" || !converted.data) {
+        throw new Error("Document could not be converted to searchable text.");
+      }
+      extractedText = converted.data;
+      searchChunks(extractedText); // Reject an oversized extraction before mutating storage.
+    }
+
+    const current = this.storage.documents.get(path);
+    if (this.getMetadata().id !== collectionId ||
+        (current?.revision ?? current?.lastUpdated.getTime()) !== revision) {
+      throw new Error("Document changed during indexing. Upload again to retry.");
+    }
     this.storage.transaction(() => {
-      let isNew = !this.storage.documents.get(path);
+      let isNew = !current;
       // Use the file name from the path as the display name.
-      this.#putDocument(record);
+      this.#putDocument(record, extractedText);
 
       let meta = this.getMetadata();
       if (isNew) meta.documentCount++;
@@ -442,6 +496,9 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
     if (moves.length === 0) throw new Error(`Nothing to move at: ${from}`);
 
+    const extractedTexts = new Map(moves.filter(m => isExtractableDocument(m.record.contentType ?? ""))
+      .map(m => [m.record.path, this.getIndexedText(m.record.path)]));
+
     let movedFrom = new Set(moves.map(m => m.record.path));
     for (let m of moves) {
       if (!movedFrom.has(m.newPath) && this.storage.documents.get(m.newPath)) {
@@ -465,7 +522,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
           contentType,
           lastUpdated: new Date(),
         };
-        this.#putDocument(record);
+        this.#putDocument(record, extractedTexts.get(m.record.path) ?? undefined);
       }
 
       let meta = this.getMetadata();
@@ -550,6 +607,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   #replaceArtifactDocuments(commit: string, documents: ArtifactContextDocument[]): void {
     this.storage.transaction(() => {
+      this.searchIndex.clear();
       for (let record of this.storage.documents.list()) {
         this.storage.documents.delete(record.path);
       }
@@ -566,11 +624,13 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
       meta.content.lastRefreshedAt = new Date();
       this.storage.metadata.put(meta);
       this.storage.skillIndexVersion.put(SKILL_INDEX_VERSION);
+      this.storage.searchIndexVersion.put(1);
     });
   }
 
   #deleteArtifactDocuments(commit: string): void {
     this.storage.transaction(() => {
+      this.searchIndex.clear();
       for (let record of this.storage.documents.list()) {
         this.storage.documents.delete(record.path);
       }
@@ -584,6 +644,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
       meta.content.lastRefreshedAt = new Date();
       this.storage.metadata.put(meta);
       this.storage.skillIndexVersion.put(SKILL_INDEX_VERSION);
+      this.storage.searchIndexVersion.put(1);
     });
   }
 
@@ -613,48 +674,32 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   // --- Search ---
 
-  /** Linear scan over one collection. Replace with an index if collection size makes it matter. */
+  /** Search this collection's uploaded and Git-backed documents by indexed text. */
   async search(query: string, limit: number = 20): Promise<{ path: string; name: string; description: string; snippet?: string; score: number }[]> {
     if (this.#isGitBased()) this.#startBackgroundArtifactRefresh();
-
-    let tokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
-    if (tokens.length === 0) return [];
-
-    let results: { path: string; name: string; description: string; snippet?: string; score: number }[] = [];
-
-    for (let record of this.storage.documents.list()) {
-      let score = 0;
-      let snippet: string | undefined;
-
-      let isText = isTextContentType(record.contentType ?? DEFAULT_DOCUMENT_CONTENT_TYPE);
-      let nameLower = record.name.toLowerCase();
-      let descLower = record.description.toLowerCase();
-      let body = isText
-        ? decodeStoredContextBody(record.contentType ?? DEFAULT_DOCUMENT_CONTENT_TYPE, record.body)
-        : "";
-      let bodyLower = body.toLowerCase();
-
-      for (let token of tokens) {
-        if (nameLower.includes(token)) score += 10;
-        if (descLower.includes(token)) score += 5;
-        let bodyIdx = isText ? bodyLower.indexOf(token) : -1;
-        if (bodyIdx >= 0) {
-          score += 1;
-          if (!snippet) {
-            let start = Math.max(0, bodyIdx - 40);
-            let end = Math.min(body.length, bodyIdx + token.length + 80);
-            snippet = (start > 0 ? "..." : "") + body.slice(start, end) + (end < body.length ? "..." : "");
-          }
-        }
-      }
-
-      if (score > 0) {
-        results.push({ path: record.path, name: record.name, description: record.description, snippet, score });
-      }
+    const count = searchLimit(limit);
+    this.#ensureSearchIndex();
+    const results: { path: string; name: string; description: string; snippet?: string; score: number }[] = [];
+    const seen = new Set<string>();
+    for (const row of this.searchIndex.retrieve(query, 50)) {
+      if (results.length >= count) break;
+      if (seen.has(row.path)) continue;
+      const record = this.storage.documents.get(row.path);
+      if (!record) continue;
+      seen.add(row.path);
+      results.push({
+        path: row.path, name: record.name, description: record.description,
+        snippet: row.body, score: row.score,
+      });
     }
+    return results;
+  }
 
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+  /** Ranked passages for grounded answers; offsets refer to extracted text, not PDF pages. */
+  async retrieve(query: string, limit = 5) {
+    if (this.#isGitBased()) this.#startBackgroundArtifactRefresh();
+    this.#ensureSearchIndex();
+    return this.searchIndex.retrieve(query, limit);
   }
 
   // --- Deletion ---

@@ -6,6 +6,8 @@ declare namespace Cloudflare {
     CONTEXT_COLLECTIONS: KVNamespace;
     // Optional Git-compatible backing repos for artifact-backed context collections.
     ARTIFACTS?: Artifacts;
+    // Converts uploaded documents to text for the collection's search index.
+    AI?: Ai;
   }
 
   interface GlobalProps {
