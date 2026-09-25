@@ -167,7 +167,7 @@ export function buildBlueprintArchiveStream(
 
   void (async () => {
     try {
-      await new Response(encodeBlueprintArchivePrefix(metadata, contentLength)).body!
+      await new Response(new Uint8Array(encodeBlueprintArchivePrefix(metadata, contentLength))).body!
           .pipeTo(archive.writable, { preventClose: true });
       await content.pipeTo(archive.writable);
     } catch (err) {
@@ -241,7 +241,7 @@ function makeStreamPrefixReader(stream: ReadableStream<Uint8Array>) {
           if (done) {
             controller.close();
           } else {
-            controller.enqueue(value);
+            if (value) controller.enqueue(value);
           }
         },
 

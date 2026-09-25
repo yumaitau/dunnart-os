@@ -11,6 +11,10 @@ describe("parseAdminConfig", () => {
     expect(config.signupsEnabled).toBe(false);
     expect(config.siteName).toBe("acme");
     expect(config.formats).toEqual([]);
+    expect(config.themeMode).toBe("system");
+    expect(config.hiddenNav).toEqual([]);
+    expect(config.skillsOffered).toBe(false);
+    expect(config.mcpOffered).toBe(false);
     expect(config.userSearchEnabled).toBe(true);
     for (let key of Object.keys(DEFAULT_ADMIN_CONFIG)) {
       expect(config[key as keyof typeof config], key).toBeDefined();
@@ -28,6 +32,14 @@ describe("parseAdminConfig", () => {
 
   it("applies the dependent default to legacy AdminSettings records", () => {
     expect(normalizeAdminConfig({ signupsEnabled: false }).userSearchEnabled).toBe(true);
+  });
+
+  it("keeps only known navigation ids", () => {
+    expect(parseAdminConfig(JSON.stringify({
+      themeMode: "dark",
+      hiddenNav: ["tasks", "nope", "tasks", "explore"],
+    })).hiddenNav).toEqual(["tasks", "explore"]);
+    expect(parseAdminConfig(JSON.stringify({ themeMode: "sepia" })).themeMode).toBe("system");
   });
 
   it("drops malformed format entries rather than the whole list", () => {

@@ -65,7 +65,7 @@ async function hashShareKey(rawKey: string): Promise<string> {
       "raw", SHARE_KEY_HMAC_KEY, { name: "HMAC", hash: "SHA-256" },
       false, ["sign"]);
   let sig = new Uint8Array(await crypto.subtle.sign(
-      "HMAC", hmacKey, Uint8Array.fromHex(rawKey)));
+      "HMAC", hmacKey, new Uint8Array(Uint8Array.fromHex(rawKey))));
   return sig.toHex();
 }
 

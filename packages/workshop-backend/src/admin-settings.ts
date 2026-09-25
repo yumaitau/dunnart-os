@@ -1,4 +1,4 @@
-import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, MAX_ANNOUNCEMENT_LENGTH, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, isAmbientGatekeeperMode, isBannerColor, isHexColor } from '@gadgets/workshop-shared/api';
+import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, InstanceNavItemId, InstanceThemeMode, MAX_ANNOUNCEMENT_LENGTH, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, isAmbientGatekeeperMode, isBannerColor, isHexColor, isInstanceNavItemId, isInstanceThemeMode } from '@gadgets/workshop-shared/api';
 import { GatekeeperVendor } from '@gadgets/workshop-shared/gatekeeper';
 import { DurableObject } from 'cloudflare:workers';
 import { RpcTarget } from 'capnweb';
@@ -298,6 +298,16 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
     return this.#mutateAdminConfig(config => ({ ...config, ...patch }));
   }
 
+  /** Show or hide one primary navigation destination. `id` is already validated by AdminApiImpl. */
+  setNavItemVisible(id: InstanceNavItemId, visible: boolean): Promise<void> {
+    return this.#mutateAdminConfig(config => {
+      let hidden = new Set(config.hiddenNav);
+      if (visible) hidden.delete(id);
+      else hidden.add(id);
+      return { ...config, hiddenNav: [...hidden] };
+    });
+  }
+
   /**
    * Read all admin-managed settings for the admin UI in one call: the stored config plus the live
    * resource catalog (every bound gatekeeper's resource types annotated with their enabled state).
@@ -318,6 +328,10 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
       announcement: config.announcement,
       banner: config.banner,
       accentColor: config.accentColor,
+      themeMode: config.themeMode,
+      hiddenNav: config.hiddenNav,
+      skillsOffered: config.skillsOffered,
+      mcpOffered: config.mcpOffered,
       resourceVendors: await this.#listResourceConfig(config, adminUserId),
       formats: await this.#listFormatConfig(config),
     };
@@ -635,6 +649,28 @@ export class AdminApiImpl extends RpcTarget implements AdminApi {
       throw new Error(`Invalid accent color: ${color}`);
     }
     await this.admin.updateAdminConfig({ accentColor: color });
+  }
+
+  async setThemeMode(mode: InstanceThemeMode): Promise<void> {
+    if (!isInstanceThemeMode(mode)) {
+      throw new Error(`Invalid theme: ${mode}`);
+    }
+    await this.admin.updateAdminConfig({ themeMode: mode });
+  }
+
+  setNavItemVisible(id: InstanceNavItemId, visible: boolean): Promise<void> {
+    if (!isInstanceNavItemId(id)) {
+      throw new Error(`Unknown navigation item: ${id}`);
+    }
+    return this.admin.setNavItemVisible(id, visible);
+  }
+
+  setSkillsOffered(offered: boolean): Promise<void> {
+    return this.admin.updateAdminConfig({ skillsOffered: offered });
+  }
+
+  setMcpOffered(offered: boolean): Promise<void> {
+    return this.admin.updateAdminConfig({ mcpOffered: offered });
   }
 
   isBlueprintFeatured(blueprintId: string): Promise<boolean | null> {

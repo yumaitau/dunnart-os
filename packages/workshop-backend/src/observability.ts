@@ -20,6 +20,7 @@ export type WorkshopObservabilityFields = {
   gatekeeperId: number | string;
   handoffKind: "connect" | "restore";
   hookId: number;
+  identityId: string;
   logBytes: number;
   modelId: string;
   observerId: string;

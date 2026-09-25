@@ -8228,7 +8228,7 @@ class OverseerImpl implements AgentHooks {
     // Compress with gzip via CompressionStream.
     let cs = new CompressionStream("gzip");
     let writer = cs.writable.getWriter();
-    writer.write(encoded);
+    writer.write(new Uint8Array(encoded));
     writer.close();
     return new Uint8Array(await new Response(cs.readable).arrayBuffer());
   }

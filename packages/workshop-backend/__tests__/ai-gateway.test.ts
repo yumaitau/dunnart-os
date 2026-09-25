@@ -23,6 +23,14 @@ describe("AiGatewayConfig transport selection", () => {
     WORKERS_AI: binding,
   });
 
+  it("defaults new model selections to GLM 4.7 Flash when Workers AI is enabled", () => {
+    const config = new AiGatewayConfig(bindingOnly);
+    expect(config.getModelList()[0].id).toBe("@cf/zai-org/glm-4.7-flash");
+    expect(config.resolveModel(config.getModelList()[0].id)?.config).toMatchObject({
+      provider: "cloudflare", model: "@cf/zai-org/glm-4.7-flash",
+    });
+  });
+
   it("uses the binding for every provider except google", () => {
     const config = new AiGatewayConfig(bindingOnly);
     expect(config.apiToken).toBeUndefined();

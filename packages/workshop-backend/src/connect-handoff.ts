@@ -45,7 +45,7 @@ export async function newSecretToken(): Promise<{ secret: Uint8Array; hash: stri
 
 /** SHA-256 hex of a secret, the form in which secrets are looked up at rest. */
 export async function hashSecret(secret: Uint8Array): Promise<string> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", secret)).toHex();
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(secret))).toHex();
 }
 
 /**

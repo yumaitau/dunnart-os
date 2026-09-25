@@ -69,7 +69,7 @@ export function concatBytes(parts: Uint8Array[]): Uint8Array {
 /** Computes the oid of an object from its type and headerless payload. */
 export async function gitObjectOid(type: GitObjectType, payload: Uint8Array): Promise<GitOid> {
   let header = ENCODER.encode(`${type} ${payload.byteLength}\0`);
-  let digest = await crypto.subtle.digest("SHA-1", concatBytes([header, payload]));
+  let digest = await crypto.subtle.digest("SHA-1", new Uint8Array(concatBytes([header, payload])));
   return toHex(new Uint8Array(digest));
 }
 
@@ -275,7 +275,7 @@ export async function buildPackBytes(objects: readonly PackableObject[]): Promis
     chunks.push(deflate(object.payload));
   }
 
-  chunks.push(new Uint8Array(await crypto.subtle.digest("SHA-1", concatBytes(chunks))));
+  chunks.push(new Uint8Array(await crypto.subtle.digest("SHA-1", new Uint8Array(concatBytes(chunks)))));
   return chunks;
 }
 
@@ -396,7 +396,7 @@ export async function decodePackBytes(
   }
   if (pos !== end) throw new Error("invalid packfile: trailing garbage after declared objects");
 
-  let digest = new Uint8Array(await crypto.subtle.digest("SHA-1", pack.subarray(0, end)));
+  let digest = new Uint8Array(await crypto.subtle.digest("SHA-1", new Uint8Array(pack.subarray(0, end))));
   if (toHex(digest) !== toHex(pack.subarray(end))) {
     throw new Error("invalid packfile: trailer SHA-1 mismatch");
   }

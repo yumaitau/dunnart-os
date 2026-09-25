@@ -4,6 +4,8 @@
 
 import { AuthVendorInfo, ServerConfig } from "@gadgets/workshop-shared/api";
 import { createWorkshopLogger } from "./observability";
+import { betterAuthEnabled } from "./auth/better-auth.js";
+import { enterpriseProviders } from "./auth/enterprise-config.js";
 import { getAuthGatekeeperAllowlist, isPasswordAuthEnabled } from "./auth/config.js";
 import { isCloudflareLimitsEnabled } from "./ai-gateway-billing/config.js";
 import { getAuthVendorBinding } from "./auth/auth-vendors.js";
@@ -36,7 +38,8 @@ export async function getAuthVendors(env: Cloudflare.Env): Promise<AuthVendorInf
       return null;
     }
   }));
-  return results.filter((v): v is AuthVendorInfo => v !== null);
+  return [...results.filter((v): v is AuthVendorInfo => v !== null),
+    ...enterpriseProviders(env).map(provider => ({ vendorId: `oidc.${provider.id}`, displayName: provider.displayName }))];
 }
 
 export async function getServerConfig(env: Cloudflare.Env): Promise<ServerConfig> {
@@ -49,6 +52,8 @@ export async function getServerConfig(env: Cloudflare.Env): Promise<ServerConfig
   ]);
   return {
     authVendors,
+    betterAuthEnabled: betterAuthEnabled(env),
+    accessMigrationEnabled: env.ACCESS_MIGRATION_ENABLED === "true",
     passwordAuthEnabled: isPasswordAuthEnabled(env),
     cloudflareLimitsEnabled: isCloudflareLimitsEnabled(env),
     signupsEnabled: config.signupsEnabled,
@@ -59,5 +64,9 @@ export async function getServerConfig(env: Cloudflare.Env): Promise<ServerConfig
     banner: config.banner.text,
     bannerColor: config.banner.color,
     accentColor: config.accentColor,
+    themeMode: config.themeMode,
+    hiddenNav: config.hiddenNav,
+    skillsOffered: config.skillsOffered,
+    mcpOffered: config.mcpOffered,
   };
 }

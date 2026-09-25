@@ -69,6 +69,9 @@ export interface PublicApi extends RpcTarget {
   /** Confirms that the RPC connection can round-trip without performing application work. */
   ping(): Promise<void>;
 
+  /** Authenticate this transport using its verified Better Auth session cookie. */
+  authenticateFromSession(): Promise<AuthenticatedApi | null>;
+
   /**
    * Returns deployment-level configuration the client needs at boot (auth mode, available sign-in
    * vendors, whether the Cloudflare limits flow is enabled). Contains no secrets.
@@ -926,6 +929,48 @@ export const MAX_SITE_NAME_LENGTH = 40;
 export const DEFAULT_SITE_NAME = "Dunnart";
 
 /**
+ * Light, dark, or the visitor's system setting. This is the instance default; a visitor who
+ * picks their own mode in the sidebar keeps that choice on their device.
+ */
+export type InstanceThemeMode = "light" | "dark" | "system";
+
+/** Whether `value` is an {@link InstanceThemeMode}. */
+export function isInstanceThemeMode(value: unknown): value is InstanceThemeMode {
+  return value === "light" || value === "dark" || value === "system";
+}
+
+/**
+ * Primary navigation an admin can hide. Home stays, so the instance always has a place to start.
+ * Order is the order shown in the admin panel.
+ */
+export const INSTANCE_NAV_ITEMS = [
+  { id: "tasks", label: "Tasks" },
+  { id: "calendar", label: "Calendar" },
+  { id: "workspaces", label: "Workspaces" },
+  { id: "blueprints", label: "Blueprints" },
+  { id: "outputs", label: "Outputs" },
+  { id: "explore", label: "Explore" },
+] as const;
+
+/** One hideable navigation id from {@link INSTANCE_NAV_ITEMS}. */
+export type InstanceNavItemId = typeof INSTANCE_NAV_ITEMS[number]["id"];
+
+/** Whether `value` is an {@link InstanceNavItemId}. */
+export function isInstanceNavItemId(value: unknown): value is InstanceNavItemId {
+  return INSTANCE_NAV_ITEMS.some(item => item.id === value);
+}
+
+/**
+ * Gatekeeper vendor ids that connect an MCP server. Hidden from users until an admin offers MCP.
+ */
+export const MCP_VENDOR_IDS = ["mcp", "mcp_portal"] as const;
+
+/** Whether `vendorId` is one of {@link MCP_VENDOR_IDS}. */
+export function isMcpVendorId(vendorId: string): boolean {
+  return (MCP_VENDOR_IDS as readonly string[]).includes(vendorId.toLowerCase());
+}
+
+/**
  * The name to display for this deployment. Accepts an unset or not-yet-loaded `siteName` so both
  * the server (reading admin config) and the client (reading ServerConfig) resolve it identically.
  */
@@ -957,6 +1002,14 @@ export type AdminSettingsView = {
   banner: BannerConfig;
   /** Accent color hex, or "" for the default theme. */
   accentColor: string;
+  /** Instance default for light, dark, or system appearance. */
+  themeMode: InstanceThemeMode;
+  /** Navigation ids hidden from the sidebar, command palette, and home shortcuts. */
+  hiddenNav: InstanceNavItemId[];
+  /** When false, the composer does not offer skills. Default off so they stay an admin choice. */
+  skillsOffered: boolean;
+  /** When false, MCP connectors are omitted from connect lists. Default off. */
+  mcpOffered: boolean;
   /** Every bound gatekeeper and its resource types, with enabled state (not hidden when disabled). */
   resourceVendors: AdminResourceVendor[];
   /** The blueprints promoted as standard output formats, in menu order (including disabled ones). */
@@ -1075,6 +1128,30 @@ export interface AdminApi {
   setAccentColor(color: string): Promise<void>;
 
   /**
+   * Set the instance default appearance. Visitors who have not chosen their own mode follow this.
+   * Rejects a value that is not light, dark, or system.
+   */
+  setThemeMode(mode: InstanceThemeMode): Promise<void>;
+
+  /**
+   * Show or hide one primary navigation destination for everyone on the instance. Home cannot be
+   * hidden. Rejects an unknown id.
+   */
+  setNavItemVisible(id: InstanceNavItemId, visible: boolean): Promise<void>;
+
+  /**
+   * Offer or hide skills in the composer. Hidden skills are not removed from gatekeepers; they
+   * just stop appearing as something a person can pick.
+   */
+  setSkillsOffered(offered: boolean): Promise<void>;
+
+  /**
+   * Offer or hide MCP connectors (a pasted server and the admin portal). Existing connections
+   * stay, but they leave the connect lists while this is off.
+   */
+  setMcpOffered(offered: boolean): Promise<void>;
+
+  /**
    * Returns whether the blueprint is featured on the deployment. Returns null when the blueprint
    * can't be featured (e.g. it isn't a listable blueprint).
    */
@@ -1146,6 +1223,10 @@ export type AuthVendorInfo = {
  * Returned by `PublicApi.getServerConfig()`. Contains no secrets.
  */
 export type ServerConfig = {
+  /** Whether HTTP cookie authentication is owned by Better Auth. */
+  betterAuthEnabled?: boolean;
+  /** Whether existing Access users can migrate their accounts once. */
+  accessMigrationEnabled?: boolean;
   /**
    * Auth-capable, allowlisted gatekeeper vendors offered as sign-in methods. Empty when none are
    * configured (password-only).
@@ -1199,6 +1280,18 @@ export type ServerConfig = {
    * overrides the brand CSS variables with this (and derived shades) at runtime.
    */
   accentColor: string;
+
+  /** Instance default appearance when a visitor has not chosen their own. */
+  themeMode: InstanceThemeMode;
+
+  /** Navigation destinations hidden for everyone on this instance. */
+  hiddenNav: InstanceNavItemId[];
+
+  /** Whether the composer offers skills. */
+  skillsOffered: boolean;
+
+  /** Whether MCP connectors appear in connect lists. */
+  mcpOffered: boolean;
 };
 
 /**
@@ -1300,6 +1393,10 @@ type SuggestedModel = {
 // The literal is kept apart from the export so SuggestedModelId can derive the model ids from it.
 const SUGGESTED_MODEL_CATALOG = {
   "cloudflare": {
+    "@cf/zai-org/glm-4.7-flash": {
+      name: "GLM 4.7 Flash (Workers AI)", contextWindow: 131072,
+      outputLimit: WORKERS_AI_OUTPUT_LIMIT,
+    },
     "@cf/moonshotai/kimi-k2.7-code": {
       name: "Kimi K2.7 Code (Workers AI)", contextWindow: 262144,
       outputLimit: WORKERS_AI_OUTPUT_LIMIT,

@@ -208,7 +208,7 @@ async function convertToMarkdown(
   const result = await env.ai.toMarkdown(
     {
       name: pathBasename,
-      blob: new Blob([bytes], { type: mime }),
+      blob: new Blob([new Uint8Array(bytes)], { type: mime }),
     },
     {
       gateway: buildGatewayOptions(env.gateway),

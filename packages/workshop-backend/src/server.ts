@@ -5,6 +5,9 @@ import { PublicApi, AuthenticatedApi, Overseer, GadgetMetadataWithTimestamps, Ai
 import type { UiFeatureFlags } from "@gadgets/workshop-shared/feature-flags";
 import { getServerConfig } from "./deployment-config.js";
 import { isPasswordAuthEnabled, getAuthGatekeeperAllowlist } from "./auth/config.js";
+import { betterAuthEnabled, createBetterAuth, handleBetterAuth } from "./auth/better-auth.js";
+import { AuthSession } from "./auth/session-watch.js";
+import { IdentityDirectory } from "./auth/identity-directory.js";
 import { getAuthVendorBinding } from "./auth/auth-vendors.js";
 import { getUsageInfo } from "./ai-gateway-billing/limits/usage-checker.js";
 import { listConnectedAccounts, selectAccount } from "./ai-gateway-billing/cloudflare/connection-service.js";
@@ -13,7 +16,7 @@ import { hashPresentedSecret, newSecretToken } from "./connect-handoff.js";
 import { deploymentOutputForBlueprint, listFormatOffers, readAdminConfig } from "./admin-config.js";
 
 // Re-export the optional-feature Durable Objects + entrypoints so they can be bound in wrangler.
-export { PendingLogin, LoginConnectCallbackImpl };
+export { PendingLogin, LoginConnectCallbackImpl, IdentityDirectory, AuthSession };
 import { GatekeeperUiFrame } from "@gadgets/workshop-shared/gatekeeper";
 import { LanguageModelGatekeeper } from "./ai-models";
 import { getAiGatewayConfig } from "./ai-gateway.js";
@@ -120,7 +123,7 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
 
   #isAdmin(): boolean {
     let name = this.#userId.name;
-    let admins = this.env.ADMINS;
+    let admins = betterAuthEnabled(this.env) ? this.env.AUTH_ADMINS : this.env.ADMINS;
 
     if (!name || !admins) return false;
 
@@ -669,7 +672,9 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
 
   constructor(private ctx: ExecutionContext, private env: Env,
       private abortSession: (reason: Error) => void,
-      private accessPayload?: JWTPayload) {
+      private retainAccessWatch: (watch: Disposable) => void,
+      private accessPayload?: JWTPayload,
+      private requestHeaders?: Headers) {
     super();
     this.users = this.ctx.exports.UserDurableObject;
   }
@@ -682,6 +687,7 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
 
   async startGatekeeperLogin(vendorId: string)
       : Promise<{ url: string; nonce: string; attempt: RpcStub<LoginAttempt> }> {
+    if (betterAuthEnabled(this.env)) throw new Error("Use Better Auth sign-in.");
     if (!getAuthGatekeeperAllowlist(this.env).includes(vendorId)) {
       throw new Error(`Sign-in via "${vendorId}" is not enabled on this deployment.`);
     }
@@ -724,7 +730,39 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
     await this.ctx.exports.PendingLogin.get(id).confirm(ticket);
   }
 
+  async #authenticatedApi(userId: DurableObjectId): Promise<AuthenticatedApi> {
+    let closed = false;
+    let started = false;
+    const notify = Object.assign((revoked: boolean) => {
+      closed = true;
+      if (revoked) this.abortSession(new Error("Account access revoked."));
+    }, { [Symbol.dispose]: () => {
+      if (started && !closed) this.abortSession(new Error("Account access subscription lost."));
+    } });
+    const watch = await this.users.get(userId).watchAccess(notify);
+    started = watch !== null;
+    if (watch) this.retainAccessWatch(watch);
+    return new AuthenticatedApiImpl(this.ctx, this.env, userId, this.abortSession);
+  }
+
+  async authenticateFromSession(): Promise<AuthenticatedApi | null> {
+    if (!betterAuthEnabled(this.env) || !this.requestHeaders) return null;
+    const session = await createBetterAuth(this.env, this.ctx).api.getSession({ headers: this.requestHeaders });
+    if (!session) return null;
+    const account = await this.env.AUTH_DB!.prepare('SELECT workshopId FROM user WHERE id = ?')
+      .bind(session.user.id).first<{ workshopId: string | null }>();
+    if (!account?.workshopId) return null;
+    const userId = this.users.idFromName(account.workshopId);
+    const notify = Object.assign(() => this.abortSession(new Error("Session expired.")), {
+      [Symbol.dispose]: () => this.abortSession(new Error("Session subscription closed.")),
+    });
+    const watch = await this.ctx.exports.AuthSession.getByName(session.session.id).watch(session.session.id, notify);
+    this.retainAccessWatch(watch);
+    return this.#authenticatedApi(userId);
+  }
+
   async authenticate(token: string): Promise<AuthenticatedApi> {
+    if (betterAuthEnabled(this.env)) throw createAuthError(AUTH_ERROR_CODES.invalidSessionToken);
     let split = token.split(':');
     if (split.length !== 2) {
       throw createAuthError(AUTH_ERROR_CODES.invalidSessionToken);
@@ -737,11 +775,11 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
       user_id: userId.toString(),
       source: "session_token",
     });
-    return new AuthenticatedApiImpl(this.ctx, this.env, userId, this.abortSession);
+    return this.#authenticatedApi(userId);
   }
 
   async authenticateFromCfAccess(): Promise<AuthenticatedApi> {
-    if (!this.accessPayload) {
+    if (betterAuthEnabled(this.env) || !this.accessPayload) {
       throw createAuthError(AUTH_ERROR_CODES.notAuthenticatedWithAccess);
     }
 
@@ -762,11 +800,11 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
       user_id: userId.toString(),
       source: "cf_access",
     });
-    return new AuthenticatedApiImpl(this.ctx, this.env, userId, this.abortSession);
+    return this.#authenticatedApi(userId);
   }
 
   async login(username: string, passwordHash: Uint8Array): Promise<string | null> {
-    if (this.env.CF_ACCESS_AUD) {
+    if (betterAuthEnabled(this.env) || this.env.CF_ACCESS_AUD) {
       throw new Error("This deployment requires Cloudflare Access authentication.");
     }
     if (!isPasswordAuthEnabled(this.env)) {
@@ -790,7 +828,7 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
 
   async createAccount(username: string, displayName: string, passwordHash: Uint8Array)
       : Promise<string | null> {
-    if (this.env.CF_ACCESS_AUD) {
+    if (betterAuthEnabled(this.env) || this.env.CF_ACCESS_AUD) {
       throw new Error("This deployment requires Cloudflare Access authentication.");
     }
     if (!isPasswordAuthEnabled(this.env)) {
@@ -842,6 +880,13 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
 
+    if (url.pathname === "/api/scim/v2" || url.pathname.startsWith("/api/scim/v2/")) {
+      return ctx.exports.IdentityDirectory.getByName("").fetch(req);
+    }
+    if (url.pathname.startsWith("/api/auth/") && betterAuthEnabled(env)) {
+      return handleBetterAuth(req, env, ctx);
+    }
+
     if (url.pathname === SITE_LOGO_PATH) {
       return serveSiteLogo(req, env.BLUEPRINT_CONTENT);
     }
@@ -850,11 +895,6 @@ export default {
       let blueprintId = url.pathname.slice(BLUEPRINT_SCREENSHOT_PATH_PREFIX.length);
       return serveBlueprintScreenshot(env, blueprintId);
     }
-
-    // Sign-in via authentication gatekeepers happens entirely within each gatekeeper Worker (the
-    // OAuth redirect lands on `/gatekeeper/<name>/oauth`); the result is bridged back to the waiting
-    // browser via the `attempt` stub from PublicApi.startGatekeeperLogin(). So the backend no longer
-    // hosts /auth/* callbacks.
 
     if (url.pathname === "/api/client-errors") {
       return handleClientErrorRequest(req, env, ctx);
@@ -886,7 +926,10 @@ export default {
 
       let accessPayload: JWTPayload | undefined;
 
-      if (env.CF_ACCESS_AUD) {
+      if (betterAuthEnabled(env) && req.headers.get("Origin") !== new URL(env.PUBLIC_BASE_URL!).origin) {
+        return new Response("Cross-origin API access not allowed.", { status: 403 });
+      }
+      if (env.CF_ACCESS_AUD && !betterAuthEnabled(env)) {
         if (req.headers.get("Origin") !== url.origin) {
           return new Response("Cross-origin API access not allowed.", { status: 403 });
         }
@@ -903,6 +946,18 @@ export default {
 
       // HACK: Implement `abortSession` callback by closing the websocket.
       // TODO: When ctx.abort() becomes non-experimental, consider using that instead.
+      // Watches live as long as the transport, including when a caller releases AuthenticatedApi
+      // but retains capabilities obtained from it (for example an open workspace or admin API).
+      const watches = new Set<Disposable>();
+      let transportClosed = false;
+      const onClose = () => {
+        transportClosed = true;
+        for (const watch of watches) watch[Symbol.dispose]();
+        watches.clear();
+      };
+      const retainWatch = (watch: Disposable) => {
+        if (transportClosed) watch[Symbol.dispose](); else watches.add(watch);
+      };
       let abortController = new AbortController();
       let abortSession = (reason: Error) => {
         // Closing the socket fails no invocation, so nothing else logs this.
@@ -911,8 +966,8 @@ export default {
       };
 
       return await newWorkersRpcResponse(req,
-          new PublicApiImpl(ctx, env, abortSession, accessPayload),
-          { abortSignal: abortController.signal });
+          new PublicApiImpl(ctx, env, abortSession, retainWatch, accessPayload, req.headers),
+          { abortSignal: abortController.signal, onClose });
     }
 
     return new Response("Not Found", {status: 404});
@@ -927,6 +982,7 @@ export default {
 type ExtendedRpcSessionOptions = RpcSessionOptions & {
   // Abort WebSocket sessions when this AbortSignal is aborted. (No effect on HTTP batch sessions.)
   abortSignal: AbortSignal;
+  onClose(): void;
 };
 
 // Clone of newWorkersRpcResponse() from Cap'n Web, except the `options` has been extended with
@@ -934,7 +990,9 @@ type ExtendedRpcSessionOptions = RpcSessionOptions & {
 async function newWorkersRpcResponse(
     request: Request, localMain: any, options?: ExtendedRpcSessionOptions) {
   if (request.method === "POST") {
-    let response = await newHttpBatchRpcResponse(request, localMain, options);
+    let response;
+    try { response = await newHttpBatchRpcResponse(request, localMain, options); }
+    finally { options?.onClose(); }
     // Since we're exposing the same API over WebSocket, too, and WebSocket always allows
     // cross-origin requests, the API necessarily must be safe for cross-origin use (e.g. because
     // it uses in-band authorization, as recommended in the readme). So, we might as well allow
@@ -958,6 +1016,8 @@ function newWorkersWebSocketRpcResponse(
   let server = pair[0];
   server.accept()
   let stub = newWebSocketRpcSession(server, localMain, options);
+  server.addEventListener("close", () => options?.onClose(), { once: true });
+  server.addEventListener("error", () => options?.onClose(), { once: true });
 
   // -- ADDED FOR GADGETS --
   if (options?.abortSignal) {

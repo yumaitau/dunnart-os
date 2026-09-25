@@ -8,7 +8,7 @@
 // changed by a compromised admin session. Everything here is enabled by default; the admin UI opts
 // things *out*.
 
-import { AmbientGatekeeperMode, BannerConfig, BlueprintBinding, BlueprintMetadata, BlueprintOutput, DEFAULT_BANNER_COLOR, OutputFormatOffer, isAmbientGatekeeperMode, isBannerColor, isOutputIcon } from "@gadgets/workshop-shared/api";
+import { AmbientGatekeeperMode, BannerConfig, BlueprintBinding, BlueprintMetadata, BlueprintOutput, DEFAULT_BANNER_COLOR, InstanceNavItemId, InstanceThemeMode, OutputFormatOffer, isAmbientGatekeeperMode, isBannerColor, isInstanceNavItemId, isInstanceThemeMode, isOutputIcon } from "@gadgets/workshop-shared/api";
 import { SupportedResource } from "@gadgets/workshop-shared/gatekeeper";
 import { ADMIN_CONFIG_KEY, BlueprintKvEnv, readBlueprintKvRecord, sanitizeBlueprintOutput } from "./blueprint-archive.js";
 
@@ -40,6 +40,14 @@ export type AdminConfig = {
   banner: BannerConfig;
   /** Accent (brand) color hex, or "" for the default theme. */
   accentColor: string;
+  /** Instance default appearance. Visitors with their own choice are left alone. */
+  themeMode: InstanceThemeMode;
+  /** Primary navigation hidden for everyone. Unknown ids are dropped on read. */
+  hiddenNav: InstanceNavItemId[];
+  /** Composer skills. Off until an admin turns them on. */
+  skillsOffered: boolean;
+  /** MCP connectors in connect lists. Off until an admin turns them on. */
+  mcpOffered: boolean;
   /** Disabled gatekeeper resources: vendorId -> disabled resource urlPatterns. */
   disabledResources: Record<string, string[]>;
   /** Fully-disabled gatekeeper vendor ids. */
@@ -94,6 +102,10 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   announcement: "",
   banner: { text: "", color: DEFAULT_BANNER_COLOR },
   accentColor: "",
+  themeMode: "system",
+  hiddenNav: [],
+  skillsOffered: false,
+  mcpOffered: false,
   disabledResources: {},
   disabledGatekeepers: [],
   ambientGatekeeperModes: {},
@@ -323,6 +335,10 @@ export function normalizeAdminConfig(p: Partial<AdminConfig>): AdminConfig {
       color: isBannerColor(p.banner?.color) ? p.banner!.color : DEFAULT_BANNER_COLOR,
     },
     accentColor: typeof p.accentColor === "string" ? p.accentColor : "",
+    themeMode: isInstanceThemeMode(p.themeMode) ? p.themeMode : "system",
+    hiddenNav: [...new Set(strings(p.hiddenNav).filter(isInstanceNavItemId))],
+    skillsOffered: p.skillsOffered === true,
+    mcpOffered: p.mcpOffered === true,
     disabledResources,
     disabledGatekeepers: strings(p.disabledGatekeepers).map(v => v.toLowerCase()),
     ambientGatekeeperModes,

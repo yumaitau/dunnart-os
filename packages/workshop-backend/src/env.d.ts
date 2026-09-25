@@ -66,8 +66,18 @@ declare global {
       // no gatekeeper sign-in (password / CF Access only).
       AUTH_GATEKEEPERS?: string;
 
+      AUTH_DB?: D1Database;
+      BETTER_AUTH_ENABLED?: string;
+      BETTER_AUTH_SECRET?: string;
+      AUTH_ADMINS?: string;
+      ACCESS_MIGRATION_ENABLED?: string;
+
+      // JSON deployment secrets: OIDC clients and provider-scoped SCIM bearer token digests.
+      OIDC_PROVIDERS?: string;
+      SCIM_TOKENS?: string;
+
       // Set to "true" to disable username/password login + signup (gatekeeper sign-in only). Only
-      // takes effect when at least one auth gatekeeper is allowlisted (otherwise password auth stays
+      // takes effect when at least one auth gatekeeper or OIDC provider is configured (otherwise password auth stays
       // on to avoid locking everyone out).
       DISABLE_PASSWORD_AUTH?: string;
 

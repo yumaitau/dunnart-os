@@ -1,9 +1,9 @@
 import { RpcStub } from "capnweb";
-import { GadgetMetadataWithTimestamps, AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS, CollaboratorRole, ConnectedAccountsSubscriber, ConnectedAccountsFilter, GatekeeperVendorFilter, GadgetMetadata, BlueprintMetadata, BlueprintLibrarySummary, BlueprintSource, BlueprintUserSummary, BLUEPRINT_SCREENSHOT_R2_PREFIX, GatekeeperVendorInfo, BlueprintOutput, OutputSummary, WorkpieceId, ListOutputsResult, AUTH_ERROR_CODES, createAuthError, ConnectFlowStart } from '@gadgets/workshop-shared/api';
+import { GadgetMetadataWithTimestamps, AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS, CollaboratorRole, ConnectedAccountsSubscriber, ConnectedAccountsFilter, GatekeeperVendorFilter, GadgetMetadata, BlueprintMetadata, BlueprintLibrarySummary, BlueprintSource, BlueprintUserSummary, BLUEPRINT_SCREENSHOT_R2_PREFIX, GatekeeperVendorInfo, BlueprintOutput, OutputSummary, WorkpieceId, ListOutputsResult, AUTH_ERROR_CODES, createAuthError, ConnectFlowStart, isMcpVendorId } from '@gadgets/workshop-shared/api';
 import { Gatekeeper, GatekeeperUser, GatekeeperUserVerifier, GatekeeperVendor, AccountDescription, VendorDescription, GatekeeperConnectCallback, ConnectHandoff, SupportedResource, ResourceConfiguratorFrame, AppUiContext, GatekeeperUiFrame } from "@gadgets/workshop-shared/gatekeeper";
 import { shouldAutoProvisionAccount, ambientGatekeeperMode } from "./provisioning-policy.js";
 import { CloudflareGatekeeperUser } from "@gadgets/workshop-shared/cloudflare-gatekeeper";
-import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
+import { DurableObject, WorkerEntrypoint, RpcStub as NativeRpcStub, RpcTarget as NativeRpcTarget } from "cloudflare:workers";
 import { createTypedStorage, collection } from "@gadgets/typed-storage";
 import { createWorkshopLogger } from "./observability";
 import { getAiGatewayConfig } from "./ai-gateway.js";
@@ -223,6 +223,7 @@ function makeUserStorage(storage: DurableObjectStorage) {
       // null until a Cloudflare account is connected and resolved.
       cloudflareBilling: <CloudflareBilling | null>null,
 
+      enterpriseAccess: <{ active: boolean; revision: number } | null>null,
       created: false,
       profile: <AiChatAuthorInfo>{
         type: "user",
@@ -321,6 +322,7 @@ async function checkGatekeeperVendorFilter(
 /** Durable Object that stores information about a user. */
 export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   private storage: UserStorage;
+  #accessWatchers = new Set<NativeRpcStub<(revoked: boolean) => void>>();
   private vendors: Map<string, Service<GatekeeperVendor>>;
   private adminSettings: DurableObjectNamespace<AdminSettings>;
 
@@ -364,6 +366,45 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
         });
   }
 
+  #assertActive(): void {
+    if (this.storage.enterpriseAccess.get()?.active === false) {
+      throw createAuthError(AUTH_ERROR_CODES.invalidSessionToken);
+    }
+  }
+
+  /** Mirror provisioning with revisions so an older in-flight update cannot reactivate an account. */
+  async provisionEnterpriseAccount(id: string, name: string, active: boolean, revision: number): Promise<void> {
+    const previous = this.storage.enterpriseAccess.get();
+    if (previous && previous.revision >= revision) return;
+    this.storage.enterpriseAccess.put({ active, revision });
+    this.storage.created.put(true);
+    this.storage.profile.put({ type: "user", id, name });
+    this.storage.profileRev.put(this.storage.profileRev.get() + 1);
+    if (!active) {
+      // Snapshot the cursor before deleting rows from its source.
+      const sessions = [...this.storage.sessions.list()];
+      for (const session of sessions) this.storage.sessions.delete(session.tokenId);
+      const watchers = [...this.#accessWatchers];
+      this.#accessWatchers.clear();
+      await Promise.allSettled(watchers.map(async watcher => {
+        try { await watcher(true); } finally { watcher[Symbol.dispose](); }
+      }));
+    }
+  }
+
+  /** A live browser must disconnect if provisioning revokes access or this subscription is lost. */
+  watchAccess(callback: NativeRpcStub<(revoked: boolean) => void>): AccessWatch | null {
+    this.#assertActive();
+    if (!this.storage.enterpriseAccess.get()) return null;
+    const watcher = callback.dup();
+    this.#accessWatchers.add(watcher);
+    return new AccessWatch(() => {
+      if (this.#accessWatchers.delete(watcher)) {
+        watcher(false).catch(() => {}).finally(() => watcher[Symbol.dispose]());
+      }
+    });
+  }
+
   async authenticate(token: string): Promise<void> {
     let tokenBytes: Uint8Array;
     try {
@@ -373,8 +414,9 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       // not surface as the decoder's SyntaxError.
       throw createAuthError(AUTH_ERROR_CODES.invalidSessionToken);
     }
-    let hash = await crypto.subtle.digest('SHA-256', tokenBytes);
+    let hash = await crypto.subtle.digest('SHA-256', new Uint8Array(tokenBytes));
     let tokenId = new Uint8Array(hash).toHex();
+    this.#assertActive();
     let session = this.storage.sessions.get(tokenId);
     if (!session) {
       throw createAuthError(AUTH_ERROR_CODES.invalidSessionToken);
@@ -407,12 +449,13 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
 
   async #newSessionToken(): Promise<string> {
     let { secret, hash: tokenId } = await newSecretToken();
+    this.#assertActive();
     this.storage.sessions.put({ tokenId, created: new Date() });
     return secret.toBase64();
   }
 
   async login(passwordHash: Uint8Array): Promise<string | null> {
-    let passwordHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', passwordHash));
+    let passwordHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(passwordHash)));
 
     let actualHashHash = this.storage.passwordHashHash.get();
     if (!actualHashHash) {
@@ -453,7 +496,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       id: username,
     });
 
-    let passwordHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', passwordHash));
+    let passwordHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(passwordHash)));
     this.storage.passwordHashHash.put(passwordHashHash);
 
     return this.#newSessionToken();
@@ -497,12 +540,12 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       throw new Error("This account does not use password login.");
     }
 
-    let oldHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', oldHash));
+    let oldHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(oldHash)));
     if (!bytesEqual(oldHashHash, actualHashHash)) {
       throw new Error("Incorrect password.");
     }
 
-    let newHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', newHash));
+    let newHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(newHash)));
     this.storage.passwordHashHash.put(newHashHash);
   }
 
@@ -756,6 +799,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   /** DO NOT MAKE PUBLIC -- returns API keys. Pure read: call sites replay it across DO resets
    * via retryOnDoReset, so it must stay free of writes and side effects. */
   async getChatContext(modelId: string | null): Promise<UserChatContext> {
+    this.#assertActive();
     let gwConfig = getAiGatewayConfig(this.env);
 
     let result: UserChatContext = {
@@ -1171,6 +1215,9 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       if (disabledGatekeeperSet.has(id)) {
         continue;  // Whole gatekeeper disabled by admin.
       }
+      if (!config.mcpOffered && isMcpVendorId(id)) {
+        continue;  // MCP stays in admin settings until it is offered.
+      }
       promises.push((async () => {
         if (filter && !(await checkGatekeeperVendorFilter(vendor, id, filter))) {
           return null;
@@ -1206,8 +1253,12 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     if (!vendor) {
       throw new Error("No such service: " + vendorId);
     }
-    if ((await readAdminConfig(this.env)).disabledGatekeepers.includes(vendorId.toLowerCase())) {
+    let adminConfig = await readAdminConfig(this.env);
+    if (adminConfig.disabledGatekeepers.includes(vendorId.toLowerCase())) {
       throw new Error(`The "${vendorId}" gatekeeper is disabled on this deployment.`);
+    }
+    if (!adminConfig.mcpOffered && isMcpVendorId(vendorId)) {
+      throw new Error(`The "${vendorId}" gatekeeper is not offered on this deployment.`);
     }
 
     let accountId = this.storage.nextAccountId.get();
@@ -1472,6 +1523,9 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       }
       if (disabledGatekeeperSet.has(record.vendorId)) {
         return;  // Whole gatekeeper disabled by admin.
+      }
+      if (!config.mcpOffered && isMcpVendorId(record.vendorId)) {
+        return;
       }
       if (filter && !(await checkGatekeeperVendorFilter(
           record.account, record.vendorId, filter))) {
@@ -2024,4 +2078,10 @@ export function normalizeUsername(username: string) {
   }
 
   return username;
+}
+
+/** Internal native-RPC subscription; never exposed as a public Workshop API. */
+class AccessWatch extends NativeRpcTarget {
+  constructor(private close: () => void) { super(); }
+  [Symbol.dispose](): void { this.close(); }
 }

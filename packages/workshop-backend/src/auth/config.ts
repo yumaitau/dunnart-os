@@ -1,3 +1,5 @@
+import { enterpriseProviders } from "./enterprise-config.js";
+
 // Configuration for sign-in via authentication gatekeepers (an optional, additive login feature).
 //
 // Authentication is provided by gatekeepers (e.g. "google", "github", "cloudflare") that advertise
@@ -25,9 +27,9 @@ export function hasAuthGatekeepers(env: Cloudflare.Env): boolean {
 /**
  * Whether username/password login + signup is available. Enabled by default. An installation can
  * set DISABLE_PASSWORD_AUTH=true to be OAuth-only — but that only takes effect when at least one
- * auth gatekeeper is allowlisted, otherwise we'd lock everyone out, so password auth stays on.
+ * auth gatekeeper or OIDC provider is configured, otherwise we'd lock everyone out, so password auth stays on.
  */
 export function isPasswordAuthEnabled(env: Cloudflare.Env): boolean {
   if (env.DISABLE_PASSWORD_AUTH !== "true") return true;
-  return !hasAuthGatekeepers(env);
+  return !hasAuthGatekeepers(env) && enterpriseProviders(env).length === 0;
 }
