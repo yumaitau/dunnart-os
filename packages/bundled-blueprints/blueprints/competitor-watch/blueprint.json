@@ -1,0 +1,21 @@
+{
+  "blueprintId": "format.competitor-watch",
+  "title": "Competitor Watch",
+  "description": "Optional competitor watchlist with dated source snapshots, change history and research notes. Use connected web tools and Scheduled Tasks for recurring checks.",
+  "output": {
+    "id": "competitor-watch",
+    "noun": "Competitor Watch",
+    "plural": "Competitor Watches",
+    "icon": "chartBar"
+  },
+  "author": {
+    "type": "user",
+    "name": "Dunnart",
+    "id": "dunnart"
+  },
+  "revision": 1,
+  "created": "2026-09-26T00:00:00.000Z",
+  "version": 1,
+  "lastUpdated": "2026-09-26T00:00:00.000Z",
+  "bindings": {}
+}
