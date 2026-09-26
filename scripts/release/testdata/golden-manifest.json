@@ -1131,6 +1131,13 @@
             "AuthSession"
           ],
           "tag": "v4"
+        },
+        {
+          "new_sqlite_classes": [
+            "DeploymentBackups",
+            "NativeRecoveryObject"
+          ],
+          "tag": "v5"
         }
       ],
       "modules": [

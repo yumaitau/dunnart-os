@@ -63,6 +63,10 @@
     {
       "tag": "v4",
       "new_sqlite_classes": [ "IdentityDirectory", "AuthSession" ]
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": [ "DeploymentBackups", "NativeRecoveryObject" ]
     }
   ],
 
@@ -84,6 +88,9 @@
       "bucket_name": "gadgets-blueprint-content"
     }
   ],
+  // Optional whole-deployment recovery: add private BACKUPS and BACKUP_RESTORE R2 bindings,
+  // BACKUP_DEPLOYMENT_ID, and the public recovery key/authentication secrets documented in
+  // docs/recovery-archive.md. Recovery private keys remain in the operator's offline kit.
   "worker_loaders": [
     {
       "binding": "LOADER"

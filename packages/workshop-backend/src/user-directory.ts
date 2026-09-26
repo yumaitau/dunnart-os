@@ -1,5 +1,8 @@
 import type { UserDirectoryRecord } from "@gadgets/workshop-shared/api";
 import { DurableObject } from "cloudflare:workers";
+import { beginNativeRecovery, captureNativeRoot, endNativeRecovery, fenceNativeRecoveryMethods,
+  readNativeRecovery, registerNativeRecoveryObject } from "./native-recovery.js";
+import { prepareRecoveryContext } from "./recovery-runtime-context.js";
 
 const SEARCH_RESULT_LIMIT = 10;
 // Every authenticated user can reach this one DO, so a search bounds what it is asked to scan.
@@ -12,8 +15,34 @@ const MAX_EXCLUDE_IDS = 1000;
  * (`UserDurableObject.#syncDirectory`).
  */
 export class UserDirectoryDurableObject extends DurableObject<Cloudflare.Env> {
+  /** Persist a maintenance fence and revoke existing RPC handles before capture. */
+  async beginRecovery(run: string, key: string): Promise<void> {
+    if (beginNativeRecovery(this.ctx, run, key)) {
+      await this.ctx.storage.sync();
+      this.ctx.abort("Native recovery fence installed; retry acquisition.");
+    }
+  }
+
+  /** Release only the maintenance fence held by this run. */
+  endRecovery(run: string): void { endNativeRecovery(this.ctx, run); }
+
+  /** Enumerate directory identities without the interactive search limit. */
+  getRecoveryInventory(): string[] {
+    return this.ctx.storage.sql.exec<{ id: string }>("SELECT id FROM users ORDER BY id")
+      .toArray().map(record => record.id);
+  }
+
+  /** Capture directory SQL and any native metadata without a search limit. */
+  async getRecoverySnapshot(): Promise<string> { return JSON.stringify(await captureNativeRoot(this.ctx)); }
+
+  /** Report a diagnostic bookmark; recovery validation compares portable contents. */
+  getRecoveryBookmark(): Promise<string> { return this.ctx.storage.getCurrentBookmark(); }
+
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
+    env = prepareRecoveryContext(ctx, env);
     super(ctx, env);
+    registerNativeRecoveryObject(this, ctx);
+    if (readNativeRecovery(ctx)) return;
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -64,3 +93,5 @@ export class UserDirectoryDurableObject extends DurableObject<Cloudflare.Env> {
     ).toArray();
   }
 }
+
+fenceNativeRecoveryMethods(UserDirectoryDurableObject);

@@ -1,7 +1,11 @@
-import { AdminApi, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, InstanceNavItemId, InstanceThemeMode, MAX_ANNOUNCEMENT_LENGTH, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, isAmbientGatekeeperMode, isBannerColor, isHexColor, isInstanceNavItemId, isInstanceThemeMode } from '@gadgets/workshop-shared/api';
+import { prepareRecoveryContext, readRecoveryRuntimeIdentity } from "./recovery-runtime-context";
+import { beginNativeRecovery, captureNativeRoot, endNativeRecovery, fenceNativeRecoveryMethods, registerNativeRecoveryObject } from "./native-recovery";
+import { registerDeploymentRpc, guardDeploymentRpc } from "./deployment-admission";
+import type { BackupSchedule, BackupStatus, BackupVerification, BackupRestorePreview, BackupRestoreStage } from "@gadgets/workshop-shared/deployment-backups";
+import { AdminApi, Overseer, AdminFormat, AdminFormatPatch, AdminResourceVendor, AdminSettingsView, AmbientGatekeeperMode, BannerColor, BlueprintPublicInfo, InstanceNavItemId, InstanceThemeMode, MAX_ANNOUNCEMENT_LENGTH, MAX_INSTANCE_INSTRUCTIONS_LENGTH, MAX_SITE_NAME_LENGTH, isAmbientGatekeeperMode, isBannerColor, isHexColor, isInstanceNavItemId, isInstanceThemeMode } from '@gadgets/workshop-shared/api';
 import { GatekeeperVendor } from '@gadgets/workshop-shared/gatekeeper';
 import { DurableObject } from 'cloudflare:workers';
-import { RpcTarget } from 'capnweb';
+import { RpcTarget, type RpcStub } from 'capnweb';
 import { validateRpc } from 'capnweb-validate';
 import { collection, createTypedStorage } from '@gadgets/typed-storage';
 import { createWorkshopLogger } from "./observability";
@@ -68,12 +72,40 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
   private siteLogoMutationTail = Promise.resolve();
 
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
+    env = prepareRecoveryContext(ctx, env);
     super(ctx, env);
+    registerNativeRecoveryObject(this, ctx);
 
     this.storage = makeAdminSettingsStorage(ctx.storage);
     this.users = this.ctx.exports.UserDurableObject;
     this.vendors = buildGatekeeperVendorMap(env);
   }
+
+  /** Persist the root fence and discard existing calls before taking its snapshot. */
+  async beginRecovery(run: string, key: string): Promise<void> {
+    if (beginNativeRecovery(this.ctx, run, key)) {
+      await this.ctx.storage.sync();
+      this.ctx.abort("Admin settings recovery fence installed; retry acquisition.");
+    }
+  }
+
+  /** Release only the matching capture fence. */
+  endRecovery(run: string): void { endNativeRecovery(this.ctx, run); }
+
+  /** Capture authoritative settings through the trusted deployment service binding. */
+  async getRecoverySnapshot(): Promise<string> { return JSON.stringify(await captureNativeRoot(this.ctx)); }
+
+  /** Detect settings writes between coherent capture and publication. */
+  getRecoveryBookmark(): Promise<string> { return this.ctx.storage.getCurrentBookmark(); }
+
+  getBackupStatus(): Promise<BackupStatus> { return this.ctx.exports.DeploymentBackups.getByName("").getBackupStatus(); }
+  rescanBackupArchives(): Promise<BackupStatus> { return this.ctx.exports.DeploymentBackups.getByName("").rescanBackupArchives(); }
+  getRestoredWorkspaceTarget(run: string, originalWorkspaceId: string): Promise<string> { return this.ctx.exports.DeploymentBackups.getByName("").getRestoredWorkspaceTarget(run, originalWorkspaceId); }
+  setBackupSchedule(schedule: BackupSchedule): Promise<BackupStatus> { return this.ctx.exports.DeploymentBackups.getByName("").setBackupSchedule(schedule); }
+  startBackup(): Promise<BackupStatus> { return this.ctx.exports.DeploymentBackups.getByName("").startBackup(); }
+  verifyBackup(id: string): Promise<BackupVerification> { return this.ctx.exports.DeploymentBackups.getByName("").verifyBackup(id); }
+  previewBackupRestore(id: string): Promise<BackupRestorePreview> { return this.ctx.exports.DeploymentBackups.getByName("").previewBackupRestore(id); }
+  stageBackupRestore(id: string, privateKey: JsonWebKey): Promise<BackupRestoreStage> { return this.ctx.exports.DeploymentBackups.getByName("").stageBackupRestore(id, privateKey); }
 
   /**
    * Install the bundled blueprints bundled with this deployment, if that hasn't already happened
@@ -87,6 +119,7 @@ export class AdminSettings extends DurableObject<Cloudflare.Env> {
    * the same blueprints, and a duplicated id makes setFormatOrder() reject every reordering.
    */
   ensureBundledBlueprintsInstalled(): Promise<boolean> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) return Promise.resolve(true);
     return this.#installInFlight ??= this.#installBundledBlueprints()
         .finally(() => { this.#installInFlight = undefined; });
   }
@@ -581,9 +614,23 @@ export class AdminApiImpl extends RpcTarget implements AdminApi {
    * `adminUserId` is the requesting admin's identity, forwarded to gatekeepers when listing the
    * resource catalog (some are RBAC-gated per user). It's plain data — not a user-DO dependency.
    */
-  constructor(private admin: DurableObjectStub<AdminSettings>, private adminUserId: string) {
+  constructor(private admin: DurableObjectStub<AdminSettings>, private adminUserId: string, private ctx: ExecutionContext) {
     super();
+    registerDeploymentRpc(this, ctx);
   }
+
+  getBackupStatus(): Promise<BackupStatus> { return this.admin.getBackupStatus(); }
+  rescanBackupArchives(): Promise<BackupStatus> { return this.admin.rescanBackupArchives(); }
+  async openRestoredWorkspace(run: string, originalWorkspaceId: string): Promise<RpcStub<Overseer>> {
+    const target = await this.admin.getRestoredWorkspaceTarget(run, originalWorkspaceId);
+    // @ts-expect-error Cap'n Web and native RPC stubs interoperate, as in AuthenticatedApiImpl.openGadget.
+    return this.ctx.exports.NativeRecoveryObject.getByName(target).openRecoveryWorkspace();
+  }
+  setBackupSchedule(schedule: BackupSchedule): Promise<BackupStatus> { return this.admin.setBackupSchedule(schedule); }
+  startBackup(): Promise<BackupStatus> { return this.admin.startBackup(); }
+  verifyBackup(id: string): Promise<BackupVerification> { return this.admin.verifyBackup(id); }
+  previewBackupRestore(id: string): Promise<BackupRestorePreview> { return this.admin.previewBackupRestore(id); }
+  stageBackupRestore(id: string, privateKey: JsonWebKey): Promise<BackupRestoreStage> { return this.admin.stageBackupRestore(id, privateKey); }
 
   getSettings(): Promise<AdminSettingsView> {
     return this.admin.getSettings(this.adminUserId);
@@ -697,3 +744,6 @@ export class AdminApiImpl extends RpcTarget implements AdminApi {
     return this.admin.setFormatOrder(blueprintIds);
   }
 }
+
+fenceNativeRecoveryMethods(AdminSettings);
+guardDeploymentRpc(AdminApiImpl);

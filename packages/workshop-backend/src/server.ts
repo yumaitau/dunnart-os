@@ -1,3 +1,5 @@
+import type { DeploymentBackupEnv } from "./deployment-backup-contract";
+import { trackDeploymentContext, withDeploymentAdmission, registerDeploymentRpc, guardDeploymentRpc, MAINTENANCE_MESSAGE } from "./deployment-admission";
 import { RpcStub, RpcTarget, newHttpBatchRpcResponse, newWebSocketRpcSession, RpcSessionOptions } from "capnweb";
 import { validateRpc } from "capnweb-validate";
 import type { JWTPayload } from "jose";
@@ -56,6 +58,10 @@ export { LanguageModelGatekeeper };
 
 // Re-export entrypoint types from admin-settings.ts.
 export { AdminSettings };
+export { DeploymentBackups } from "./deployment-backups";
+export { NativeRecoveryObject, NativeRecoveryHook, RecoveryGadgetRoute } from "./native-recovery";
+export { RecoveryGadgetInspector } from "./recovery-gadget";
+export { RecoveryObjectRoute } from "./recovery-runtime-context";
 
 // Re-export the deployment-wide user directory Durable Object.
 export { UserDirectoryDurableObject };
@@ -72,7 +78,7 @@ export { OverseerDurableObject, GatekeeperLoopback, GatekeeperHookLoopback,
 export { ExternalMessageGateway };
 
 // Declare optional environment variables here since they may be omitted from wrangler.jsonc.
-type Env = Cloudflare.Env & {
+type Env = DeploymentBackupEnv & {
   // Set these if using Cloudflare Access for authentication, otherwise username/password is used.
   CF_ACCESS_AUD?: string,  // audience
   CF_ACCESS_ISS?: string,  // team URL, i.e. https://<team>.cloudflareaccess.com
@@ -89,6 +95,7 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
       private abortSession: (reason: Error) => void) {
     super();
 
+    registerDeploymentRpc(this, ctx);
     this.#userId = userId;
     this.overseers = this.ctx.exports.OverseerDurableObject;
     this.adminSettings = this.ctx.exports.AdminSettings;
@@ -630,7 +637,7 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
     let adminUserId = this.#userId.name!;
     // @ts-expect-error Cap'n Web RPC stubs and native RPC targets are compatible but the type
     //     system doesn't know this.
-    return new AdminApiImpl(this.adminSettings.getByName(""), adminUserId);
+    return new AdminApiImpl(this.adminSettings.getByName(""), adminUserId, this.ctx);
   }
 }
 
@@ -676,6 +683,7 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
       private accessPayload?: JWTPayload,
       private requestHeaders?: Headers) {
     super();
+    registerDeploymentRpc(this, ctx);
     this.users = this.ctx.exports.UserDurableObject;
   }
 
@@ -876,8 +884,23 @@ class PublicApiImpl extends RpcTarget implements PublicApi {
   }
 }
 
+guardDeploymentRpc(PublicApiImpl);
+guardDeploymentRpc(AuthenticatedApiImpl);
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
+    const tracked = trackDeploymentContext(ctx, !!(env.BACKUPS && env.BACKUP_PUBLIC_KEY && env.BACKUP_AUTHENTICATION_KEY));
+    try { return await withDeploymentAdmission(tracked, () => dispatchRequest(req, env, tracked)); }
+    catch (error) {
+      if (error instanceof Error && error.message === MAINTENANCE_MESSAGE) {
+        return new Response(MAINTENANCE_MESSAGE, { status: 503, headers: { "Retry-After": "30" } });
+      }
+      throw error;
+    }
+  },
+};
+
+async function dispatchRequest(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
 
     if (url.pathname === "/api/scim/v2" || url.pathname.startsWith("/api/scim/v2/")) {
@@ -971,8 +994,7 @@ export default {
     }
 
     return new Response("Not Found", {status: 404});
-  }
-} satisfies ExportedHandler<Env>;
+}
 
 // Extend Cap'n Web's RpcSessionOptions with an AbortSignal.
 //

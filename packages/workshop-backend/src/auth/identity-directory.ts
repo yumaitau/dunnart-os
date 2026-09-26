@@ -2,6 +2,9 @@ import { DurableObject } from "cloudflare:workers";
 import { ScimError, parseScimUser, patchScimUser, scimProfile, scimFilter, type ProvisionedProfile } from "./scim-schema.js";
 import { handleScimRequest } from "./scim-http.js";
 import { createWorkshopLogger } from "../observability.js";
+import { beginNativeRecovery, captureNativeRoot, endNativeRecovery, fenceNativeRecoveryMethods,
+  readNativeRecovery, registerNativeRecoveryObject } from "../native-recovery.js";
+import { prepareRecoveryContext } from "../recovery-runtime-context.js";
 
 const logger = createWorkshopLogger("workshop.identity");
 
@@ -12,8 +15,28 @@ type Identity = ProvisionedProfile & {
 
 /** Provider-scoped identities with stable local account keys across profile and email changes. */
 export class IdentityDirectory extends DurableObject<Cloudflare.Env> {
+  /** Persist a maintenance fence and revoke existing RPC handles before capture. */
+  async beginRecovery(run: string, key: string): Promise<void> {
+    if (beginNativeRecovery(this.ctx, run, key)) {
+      await this.ctx.storage.sync();
+      this.ctx.abort("Native recovery fence installed; retry acquisition.");
+    }
+  }
+
+  /** Release only the maintenance fence held by this run. */
+  endRecovery(run: string): void { endNativeRecovery(this.ctx, run); }
+
+  /** Export complete identity and pending synchronization SQL for deployment recovery. */
+  async getRecoverySnapshot(): Promise<string> { return JSON.stringify(await captureNativeRoot(this.ctx)); }
+
+  /** Report a diagnostic bookmark; recovery validation compares portable contents. */
+  getRecoveryBookmark(): Promise<string> { return this.ctx.storage.getCurrentBookmark(); }
+
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
+    env = prepareRecoveryContext(ctx, env);
     super(ctx, env);
+    registerNativeRecoveryObject(this, ctx);
+    if (readNativeRecovery(ctx)) return;
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS identities (
       id TEXT PRIMARY KEY, provider TEXT NOT NULL, username TEXT NOT NULL,
       email TEXT NOT NULL, external_id TEXT, issuer TEXT, subject TEXT,
@@ -185,3 +208,5 @@ function pagination(value: string | null, fallback: number, min: number, max: nu
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) throw new ScimError(400, "Invalid pagination.", "invalidValue");
   return Math.min(Math.max(Number(value), min), max);
 }
+
+fenceNativeRecoveryMethods(IdentityDirectory);

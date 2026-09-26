@@ -47,11 +47,15 @@ export default defineConfig({
         bindings: { PUBLIC_BASE_URL: 'https://workshop.example/' },
         // The overseer loads gadget code through this, so a test can run a real gadget facet.
         d1Databases: ['AUTH_DB'],
+        r2Buckets: ['BACKUPS'],
         workerLoaders: { LOADER: {} },
         durableObjects: {
           TEST_OVERSEER: { className: 'OverseerDurableObject', useSQLite: true },
           TEST_USER: { className: 'UserDurableObject', useSQLite: true },
           TEST_ADMIN_SETTINGS: { className: 'AdminSettings', useSQLite: true },
+          TEST_DEPLOYMENT_BACKUPS: { className: 'DeploymentBackups', useSQLite: true },
+          TEST_NATIVE_RECOVERY: { className: 'NativeRecoveryObject', useSQLite: true },
+          TEST_RECOVERY_GADGET: { className: 'RecoveryGadgetInspector', useSQLite: true },
           TEST_IDENTITY_DIRECTORY: { className: 'IdentityDirectory', useSQLite: true },
           TEST_AUTH_SESSION: { className: 'AuthSession', useSQLite: true },
           TEST_PENDING_LOGIN: { className: 'PendingLogin', useSQLite: true },

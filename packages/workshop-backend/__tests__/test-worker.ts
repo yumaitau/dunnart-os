@@ -101,3 +101,9 @@ export class FakeGatekeeperAccount
     return accountCalls.get(this.ctx.props.name) ?? [];
   }
 }
+
+export { DeploymentBackups } from "../src/deployment-backups.js";
+export { NativeRecoveryObject, NativeRecoveryHook } from "../src/native-recovery.js";
+export { RecoveryGadgetInspector } from "../src/recovery-gadget.js";
+
+export { RecoveryObjectRoute } from "../src/recovery-runtime-context.js";

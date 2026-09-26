@@ -1,3 +1,4 @@
+import { sealCapabilityDescriptor } from "@gadgets/backend-utils/recovery-capability";
 import { DurableObject, RpcStub, RpcTarget } from "cloudflare:workers";
 import { validateRpc } from "capnweb-validate";
 import type {
@@ -652,11 +653,19 @@ export type LanguageModelGatekeeperProps = {
   config: AiModelConfig,
   initiator: AiChatAuthorInfo,
   metadata?: GatewayMetadataContext,
+  /** Internal recovery namespace; imported model credentials remain inactive during a drill. */
+  recoveryScope?: string,
 };
 
 export class LanguageModelGatekeeper
     extends DurableObject<Cloudflare.Env, LanguageModelGatekeeperProps>
     implements Gatekeeper<LanguageModelBinding> {
+  /** Reconstruction material for the trusted recovery service; never exposed by model sessions. */
+  getRecoveryClassDescriptor() {
+    return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY,
+      { kind: "workshop-language-model-class", props: this.ctx.props });
+  }
+
   async describe(): Promise<ResourceDescription> {
     let modelConfig = this.ctx.props.config;
     let displayName = this.ctx.props.displayName;
@@ -684,6 +693,7 @@ export class LanguageModelGatekeeper
 
   async startSession(approvalQueue: RpcStub<ApprovalQueue>)
       : Promise<LanguageModelBinding> {
+    if (this.ctx.props.recoveryScope) throw new Error("Model execution is paused in isolated recovery.");
     let model = getModel(this.env, this.ctx.props.config, this.ctx.props.initiator, {
       metadata: this.ctx.props.metadata,
     });

@@ -1,3 +1,4 @@
+import type { BackupSchedule, BackupStatus, BackupVerification, BackupRestorePreview, BackupRestoreStage } from "./deployment-backups";
 // This file defines the API spoken between the Gadgets Workshop service and the front-end UI.
 //
 // The UI is a good old "fat client" SPA. Why not use SSR? Because:
@@ -1067,6 +1068,23 @@ export type AdminFormat = {
  * driven). Each setter throws on invalid input.
  */
 export interface AdminApi {
+  /** Read deployment backup setup, required coverage, schedule, and persistent history. */
+  getBackupStatus(): Promise<BackupStatus>;
+  /** Rediscover archived runs from independently authenticated receipts after coordinator loss. */
+  rescanBackupArchives(): Promise<BackupStatus>;
+  /** Open an archived workspace only after its isolated restore completed and was verified. */
+  openRestoredWorkspace(run: string, originalWorkspaceId: string): Promise<RpcStub<Overseer>>;
+  /** Validate and persist the UTC backup schedule. */
+  setBackupSchedule(schedule: BackupSchedule): Promise<BackupStatus>;
+  /** Queue a durable manual backup; completion is observed through status. */
+  startBackup(): Promise<BackupStatus>;
+  /** Authenticate the archive and check every encrypted object without a private key. */
+  verifyBackup(id: string): Promise<BackupVerification>;
+  /** Check isolated restore prerequisites without changing production state. */
+  previewBackupRestore(id: string): Promise<BackupRestorePreview>;
+  /** Decrypt into an isolated inactive target; the private key is never persisted. */
+  stageBackupRestore(id: string, privateKey: JsonWebKey): Promise<BackupRestoreStage>;
+
   /** Read all admin-managed settings for the admin UI in one call. */
   getSettings(): Promise<AdminSettingsView>;
 

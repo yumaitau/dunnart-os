@@ -11,6 +11,10 @@
       "types": "./src/feature-flags.ts",
       "import": "./src/feature-flags.ts"
     },
+    "./gatekeeper-recovery": {
+      "types": "./src/gatekeeper-recovery.ts",
+      "import": "./src/gatekeeper-recovery.ts"
+    },
     "./gatekeeper": {
       "types": "./src/gatekeeper.ts",
       "import": "./src/gatekeeper.ts"
@@ -34,6 +38,10 @@
     "./theme": {
       "types": "./src/theme.ts",
       "import": "./src/theme.ts"
+    },
+    "./deployment-backups": {
+      "types": "./src/deployment-backups.ts",
+      "import": "./src/deployment-backups.ts"
     }
   },
   "scripts": {

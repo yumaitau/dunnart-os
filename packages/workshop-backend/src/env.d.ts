@@ -74,6 +74,9 @@ declare global {
       AUTH_ADMINS?: string;
       ACCESS_MIGRATION_ENABLED?: string;
 
+      // Shared provenance key for recovery descriptors; never injected into application workers.
+      BACKUP_CAPABILITY_KEY?: string;
+
       // JSON deployment secrets: OIDC clients and provider-scoped SCIM bearer token digests.
       OIDC_PROVIDERS?: string;
       SCIM_TOKENS?: string;

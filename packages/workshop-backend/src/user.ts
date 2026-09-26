@@ -13,6 +13,9 @@ import { isReservedBlueprintKey, readBlueprintKvRecord } from "./blueprint-archi
 import { filterEnabledResources, isResourceDisabled, readAdminConfig } from "./admin-config.js";
 import { buildGatekeeperVendorMap } from "./auth/auth-vendors.js";
 import { CONNECT_FLOW_LIFETIME_MS, handoffTargetOrigin, hashPresentedSecret, newSecretToken, PENDING_HANDOFF_LIFETIME_MS } from "./connect-handoff.js";
+import { beginNativeRecovery, captureNativeRoot, endNativeRecovery, fenceNativeRecoveryMethods,
+  readNativeRecovery, registerNativeRecoveryObject, type NativeRecoveryService } from "./native-recovery.js";
+import { prepareRecoveryContext, readRecoveryRuntimeIdentity } from "./recovery-runtime-context.js";
 
 const logger = createWorkshopLogger("workshop.user");
 
@@ -321,17 +324,48 @@ async function checkGatekeeperVendorFilter(
 
 /** Durable Object that stores information about a user. */
 export class UserDurableObject extends DurableObject<Cloudflare.Env> {
+  /** Fence normal calls before the deployment-wide snapshot begins. */
+  async beginRecovery(run: string, key: string): Promise<void> {
+    if (beginNativeRecovery(this.ctx, run, key)) {
+      await this.ctx.storage.sync();
+      this.ctx.abort("Native recovery fence installed; retry acquisition.");
+    }
+  }
+
+  /** Release the maintenance fence owned by this run. */
+  endRecovery(run: string): void { endNativeRecovery(this.ctx, run); }
+
+  /** Enumerate every retained workspace and connected account for deployment recovery. */
+  getRecoveryInventory() {
+    return {
+      workspaceIds: [...this.storage.gadgets.list()].map(record => record.id),
+      accounts: [...this.storage.connectedAccounts.list()].map(record => ({
+        accountId: record.id, vendorId: record.vendorId, account: record.account,
+      })),
+    };
+  }
+
+  /** Capture all native user state through a trusted deployment recovery service. */
+  async getRecoverySnapshot(service?: NativeRpcStub<NativeRecoveryService>): Promise<string> {
+    return JSON.stringify(await captureNativeRoot(this.ctx, service));
+  }
+
+  /** Report a diagnostic bookmark; recovery validation compares portable contents. */
+  getRecoveryBookmark(): Promise<string> { return this.ctx.storage.getCurrentBookmark(); }
+
   private storage: UserStorage;
   #accessWatchers = new Set<NativeRpcStub<(revoked: boolean) => void>>();
   private vendors: Map<string, Service<GatekeeperVendor>>;
   private adminSettings: DurableObjectNamespace<AdminSettings>;
 
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
+    env = prepareRecoveryContext(ctx, env);
     super(ctx, env);
+    registerNativeRecoveryObject(this, ctx);
 
     // Migrate data created prior to the minions -> gadgets rename.
     // TODO(cleanup): Eventually remove this, very few people ever used it as "minions".
-    for (let [key, value] of Array.from(ctx.storage.kv.list({prefix: "minions:"}))) {
+    for (let [key, value] of readNativeRecovery(ctx) ? [] : Array.from(ctx.storage.kv.list({prefix: "minions:"}))) {
       let newKey = "gadgets:" + key.slice("minions:".length);
       ctx.storage.kv.put(newKey, value);
       ctx.storage.kv.delete(key);
@@ -1249,6 +1283,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   }
 
   async connectAccount(vendorId: string, resourceUrlPatterns?: string[]): Promise<ConnectFlowStart> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Connector provisioning and authorization remain paused in isolated recovery.");
     let vendor = this.vendors.get(vendorId);
     if (!vendor) {
       throw new Error("No such service: " + vendorId);
@@ -1351,6 +1386,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
    * Only when the vendor's mode isn't "disabled" and the user has no account yet. Idempotent.
    */
   provisionAmbientAccount(vendorId: string): Promise<void> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Connector provisioning and authorization remain paused in isolated recovery.");
     vendorId = vendorId.toLowerCase();
     let inFlight = this.#provisionPromises.get(vendorId);
     if (inFlight) return inFlight;
@@ -1408,6 +1444,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   // and best-effort: a single failing vendor never blocks the others. Creates at most one account per
   // vendor. Deduped via #ensureAccountsPromise (above); callers reach it through listProvidedAccounts.
   #ensureAutoProvisionedAccounts(): Promise<void> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) return Promise.resolve();
     return (this.#ensureAccountsPromise ??=
       this.#provisionMissingAccounts().finally(() => { this.#ensureAccountsPromise = undefined; }));
   }
@@ -1484,6 +1521,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
 
   async ensureAccountResources(accountId: number, resourceUrlPatterns: string[])
       : Promise<ConnectFlowStart | null> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Connector provisioning and authorization remain paused in isolated recovery.");
     let record = this.storage.connectedAccounts.get(accountId);
     if (!record) throw new Error("No such account.");
     let { url } = await record.account.ensureResources(resourceUrlPatterns);
@@ -1659,6 +1697,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   }
 
   async reconnectAccount(accountId: number): Promise<ConnectFlowStart> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Connector provisioning and authorization remain paused in isolated recovery.");
     let record = this.storage.connectedAccounts.get(accountId);
     if (!record) throw new Error("No such account.");
     let { url } = await record.account.reconnect();
@@ -2085,3 +2124,6 @@ class AccessWatch extends NativeRpcTarget {
   constructor(private close: () => void) { super(); }
   [Symbol.dispose](): void { this.close(); }
 }
+
+// Recovery RPC remains available while ordinary root calls are fenced.
+fenceNativeRecoveryMethods(UserDurableObject);

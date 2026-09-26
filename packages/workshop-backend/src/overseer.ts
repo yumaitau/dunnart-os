@@ -1,4 +1,11 @@
 import { AgentMemory, type MemorySource } from "./agent-memory";
+import { beginNativeRecovery, captureNativeRoot, endNativeRecovery, fenceNativeRecoveryMethods,
+  nativeClassDescriptor, NativeRecoveryObject, readNativeRecovery, registerNativeRecoveryObject,
+  type NativeRecoveryService } from "./native-recovery";
+import { RecoveryGadgetInspector } from "./recovery-gadget";
+import type { PortableDescriptor } from "@gadgets/backend-utils/recovery-value";
+import { sealCapabilityDescriptor, verifyCapabilityDescriptor } from "@gadgets/backend-utils/recovery-capability";
+import { prepareRecoveryContext, prepareRecoveryLoopbackContext, readRecoveryRuntimeIdentity, type RecoveryNamedIds } from "./recovery-runtime-context";
 import { RpcCompatible, RpcStub, RpcTarget } from "capnweb";
 import { validateRpc } from "capnweb-validate";
 import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, ActionHistoryFilter, ActionHistoryPage, ChatGadgetPin, ChatCodeBase, ChatGadgetPinState, CodeChangeSubmission, CommitIdentity, CommitInfo, FileAtCommit, MAX_READ_FILES_PER_CALL, TreeNode, MergeChangesResult, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName, actionChangeTime } from '@gadgets/workshop-shared/api';
@@ -2034,7 +2041,7 @@ class OverseerImpl implements AgentHooks {
     // agent-turn restoration below, hook deliveries, and [restore]()-based persistent callbacks.
     // This migration is fully synchronous, so nothing can observe pre-migration state; the
     // git-storage migration below is the asynchronous one, shielded by blockConcurrencyWhile.
-    this.#migrateStorage();
+    if (!readNativeRecovery(this.ctx)) this.#migrateStorage();
     this.defaultGadgetId = this.storage.defaultGadgetId.get();
 
     this.#autoApprovalDrainer = new AutoApprovalDrainer(
@@ -2052,6 +2059,7 @@ class OverseerImpl implements AgentHooks {
       remove: () => this.markOutputsDirty(),
     });
 
+    if (readNativeRecovery(this.ctx) || readRecoveryRuntimeIdentity(this.ctx)) return;
     if (this.storage.version.get() === 1) {
       // The workspace predates git-backed code storage (version 2, see the `version` singleton):
       // synthesize commits from the legacy code log before anything else runs. This migration
@@ -2083,6 +2091,7 @@ class OverseerImpl implements AgentHooks {
   // any blocked event is delivered) so that if we were called at the start of the alarm handler,
   // it'll recognize that agents are running and wait for them.
   #resumeInterruptedAgents(): void {
+    if (readNativeRecovery(this.ctx)) return;
     for (let record of Array.from(this.storage.activeAgents.list())) {
       // Register the running agent immediately (see above), and create the LiveChatContext
       // synchronously, so that cancellations are immediately respected.
@@ -5065,7 +5074,8 @@ class OverseerImpl implements AgentHooks {
       codeVersion += `.${chatId}.${sequence}`;
     }
 
-    return this.env.LOADER.get(`${this.ctx.id}.${codeVersion}.${gadgetId}`, async () => {
+    const recovery = readRecoveryRuntimeIdentity(this.ctx);
+    return this.env.LOADER.get(`${recovery ? recovery.scope + "." : ""}${this.ctx.id}.${codeVersion}.${gadgetId}`, async () => {
       // The snapshot meta above serves the as-of-`sequence` doc build; this re-read only keeps
       // the old fail-on-deleted-chat behavior (don't cache a load for a chat deleted mid-load).
       if (chatId !== undefined) this.getChatMetaOrThrow(chatId);
@@ -5157,6 +5167,15 @@ class OverseerImpl implements AgentHooks {
   // comment there): a request made on the returned stub leaves the facet unable to call its own
   // ctx.restore(). `chatId` must already be resolved by #resolveGadgetChatId.
   #getGadgetFacetRaw(gadgetId: WorkpieceId, chatId: number | undefined): Fetcher<DurableObject> {
+    const recovery = readNativeRecovery(this.ctx);
+    if (recovery) {
+      return this.ctx.facets.get(this.gadgetFacetName(gadgetId), () => ({
+        class: this.ctx.exports.RecoveryGadgetInspector({ props: {
+          scope: { overseerId: this.ctx.id.toString(), gadgetId, ...(chatId === undefined ? {} : { chatId }) },
+          key: recovery.key,
+        } }),
+      }));
+    }
     // If we switched chats since the last time we ran the gadget and either the old or new chat
     // has proposed changes, this means we're changing what code is running, so we need to reset
     // the gadget. this.#runningChatIds tracks, for each gadget, which chat's proposed changes are
@@ -5402,6 +5421,9 @@ class OverseerImpl implements AgentHooks {
   // `cls` is for the one caller that has the class in hand but has deliberately not published the
   // record yet (`addGatekeeper`); everyone else resolves it from the record.
   getGatekeeperFacet(id: number, cls?: GatekeeperClass): Fetcher<Gatekeeper<any>> {
+    if (readNativeRecovery(this.ctx) && this.ctx.storage.kv.get(".nativeRecoveryClasses")) {
+      throw new Error("Deployment recovery capture is in progress; retry shortly.");
+    }
     return this.ctx.facets.get(`gatekeeper${id}`, async () => {
       let resolved = cls ?? this.storage.gatekeepers.get(id)?.class;
       if (!resolved) {
@@ -5440,7 +5462,8 @@ class OverseerImpl implements AgentHooks {
   // requiring them here guarantees the audit log always records the resolving user and whether it
   // was applied automatically. For an auto-approval, `resolvedBy` is the user who enabled the rule.
   async applyPendingAction(record: ActionRecord & {type: "action"},
-                           resolvedBy: AiChatAuthorInfo, autoApproved: boolean): Promise<void> {
+                     resolvedBy: AiChatAuthorInfo, autoApproved: boolean): Promise<void> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Pending actions remain paused in isolated recovery.");
     let gatekeeper = this.getGatekeeperFacet(record.gatekeeperId);
     // The apply-time cache stub is scoped to the gatekeeper AND to this action (approval can
     // happen long after the session that queued it, so the queue-time stub is gone) -- the
@@ -7182,6 +7205,7 @@ class OverseerImpl implements AgentHooks {
                 initiator: AiChatAuthorInfo,
                 callbackInitiated: boolean,
                 liveChat: LiveChatContext): Promise<void> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Agent execution remains paused in isolated recovery.");
     return obsContext.with({
       operation: "agent.run",
       gadgetId: this.ctx.id.toString(),
@@ -7720,6 +7744,7 @@ class OverseerImpl implements AgentHooks {
   async generateBindingName(
       subject: string, takenNames: Set<string>,
       quick: {config: AiModelConfig, initiator: AiChatAuthorInfo}): Promise<string | undefined> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) return undefined;
     try {
       let model = getModel(this.env, quick.config, quick.initiator);
       let result = await completeText(model, {
@@ -8412,6 +8437,7 @@ class OverseerImpl implements AgentHooks {
   async generateThreadTitle(chatId: number, initialMessage: string,
                             modelConfig: AiModelConfig,
                             initiator: AiChatAuthorInfo): Promise<void> {
+    if (readRecoveryRuntimeIdentity(this.ctx)) return;
     try {
       let model = getModel(this.env, modelConfig, initiator, {
         metadata: { source: "thread-title", gadgetId: this.ctx.id.toString(), chatId },
@@ -8461,6 +8487,7 @@ class OverseerImpl implements AgentHooks {
   // Generate a title for the whole gadget, called only after code starts being written.
   async generateGadgetTitle(chatId: number, modelConfig: AiModelConfig,
                             initiator: AiChatAuthorInfo) {
+    if (readRecoveryRuntimeIdentity(this.ctx)) return;
     try {
       let parts: string[] = [];
 
@@ -9703,6 +9730,25 @@ class OverseerImpl implements AgentHooks {
   // being bound, and executions within a chat are serialized, so execution scope suffices.
   #forgedRestoreTargets = new Map<number, Set<WorkpieceId>>();
 
+  /** Recreate an archived callback using the existing trusted restore-forger mechanism. */
+  async forgeRecoveryCallback(gadgetId: WorkpieceId, chatId: number | undefined, params: unknown): Promise<unknown> {
+    if (!readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Callback reconstruction requires isolated recovery.");
+    this.getGadgetRecord(gadgetId);
+    const codeId = crypto.randomUUID();
+    let forger: Fetcher<RestoreForgerEntrypoint>;
+    try {
+      this.#codeIdMap.set(codeId, RESTORE_FORGER_WORKER);
+      forger = await this.ctx.restore({ type: "gadget", gadgetId, chatId, codeId });
+    } finally { this.#codeIdMap.delete(codeId); }
+    const callback = await forger.forge(params);
+    const key = `.recoveryCallback:${crypto.randomUUID()}`;
+    this.ctx.storage.kv.put(key, callback);
+    await this.ctx.storage.sync();
+    const restored = this.ctx.storage.kv.get(key);
+    this.ctx.storage.kv.delete(key);
+    return restored;
+  }
+
   // Forge a persistent stub that restores through the gadget's [restore](params) method. The
   // executeCode harness routes `env.<bindingName>[restore](params)` here (via RestoreForgerImpl);
   // `bindings` is that execution's own binding map, so the name conveys exactly the env the
@@ -9811,8 +9857,135 @@ type OverseerRestoreParams = {
 export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
   private impl: OverseerImpl;
 
+  /** Expose the original workspace API to a trusted operator of an isolated restored instance. */
+  async openRecoveryWorkspace(): Promise<Overseer> {
+    if (!readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Workspace is not an isolated restored runtime.");
+    const ownerId = this.impl.storage.ownerId.get();
+    if (!ownerId) throw new Error("Restored workspace has no owner.");
+    const owner = this.impl.users.get(this.impl.users.idFromString(ownerId));
+    const profile = await owner.whoami();
+    return await this.open(ownerId, profile.id, new NativeRpcStub(() => {}));
+  }
+
+  /** Exercise archived code through the normal loader and original application facets. */
+  async verifyRecoveryApplications(): Promise<{ title: string; gadgets: Array<{ id: number; files: number }> }> {
+    if (!readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Workspace is not an isolated restored runtime.");
+    const gadgets: Array<{ id: number; files: number }> = [];
+    for (const record of this.impl.storage.gadgets.list()) {
+      if (record.type !== "gadget") continue;
+      const commitId = this.impl.getGadgetHead(record.id);
+      const files = commitId ? await this.impl.gitStore.readCommitFiles(commitId) : new Map<string, string>();
+      if (files.has("server.js")) await this.impl.getGadgetFacetFetcher(record.id);
+      gadgets.push({ id: record.id, files: files.size });
+    }
+    const ownerId = this.impl.storage.ownerId.get();
+    if (ownerId) await this.impl.users.get(this.impl.users.idFromString(ownerId)).getGadget(this.ctx.id.toString());
+    return { title: this.impl.storage.title.get(), gadgets };
+  }
+
+  /** Invoke a recovered original app target through its real restore hook, never through a live workspace. */
+  async invokeRecoveryGadget(descriptor: { kind: string; gadgetId: number; chatId?: number }, params: unknown,
+      method: string, args: unknown[]): Promise<unknown> {
+    if (!readRecoveryRuntimeIdentity(this.ctx) || !Number.isSafeInteger(descriptor.gadgetId) ||
+        typeof method !== "string" || !Array.isArray(args)) throw new Error("Invalid recovered gadget call.");
+    let target: any;
+    if (descriptor.kind === "gadget") {
+      target = await this.impl.getGadgetFacetFetcher(descriptor.gadgetId, descriptor.chatId);
+    } else if (descriptor.kind === "gadget-callback") {
+      target = await this.impl.forgeRecoveryCallback(descriptor.gadgetId, descriptor.chatId, params);
+    } else throw new Error("Invalid recovered gadget descriptor.");
+    return await Reflect.apply(Reflect.get(target, method), target, args);
+  }
+
+  /** Fence ordinary calls and replace gadget code with trusted inspectors for this run. */
+  async beginRecovery(run: string, key: string): Promise<void> {
+    if ([...this.impl.storage.activeAgents.list()].length > 0) {
+      throw new Error("Workspace has active agents; retry recovery after its current work completes.");
+    }
+    if (beginNativeRecovery(this.ctx, run, key)) {
+      await this.ctx.storage.sync();
+      this.ctx.abort("Native recovery fence installed; retry acquisition.");
+    }
+  }
+
+  /** Release only this run and discard inspectors before application code resumes. */
+  endRecovery(run: string): void {
+    endNativeRecovery(this.ctx, run);
+    this.ctx.storage.kv.delete(".nativeRecoveryClasses");
+    for (const record of this.impl.storage.gadgets.list()) {
+      if (record.type === "gadget") this.ctx.facets.abort(this.impl.gadgetFacetName(record.id), new Error("Recovery inspection complete"));
+    }
+    for (const record of this.impl.storage.gatekeepers.list()) {
+      this.ctx.facets.abort(`gatekeeper${record.id}`, new Error("Recovery inspection complete"));
+    }
+  }
+
+  /** Enumerate application facets and authoritative class creation records. */
+  getRecoveryInventory() {
+    return {
+      ownerId: this.impl.storage.ownerId.get(),
+      gadgets: [...this.impl.storage.gadgets.list()].filter(record => record.type === "gadget")
+        .map(record => ({ id: record.id, name: this.impl.gadgetFacetName(record.id) })),
+      gatekeepers: [...this.impl.storage.gatekeepers.list()]
+        .map(record => ({ id: record.id, name: `gatekeeper${record.id}`, creationSpec: record.creationSpec })),
+    };
+  }
+
+  /** Preserve class reconstruction material before the driver takes its global revision baseline. */
+  async prepareRecovery(service?: NativeRpcStub<NativeRecoveryService>): Promise<void> {
+    const recovery = readNativeRecovery(this.ctx);
+    if (!recovery) throw new Error("Native recovery inspection must be acquired before capture.");
+    let classDescriptors = this.ctx.storage.kv.get<Map<number, PortableDescriptor>>(".nativeRecoveryClasses");
+    if (!classDescriptors) {
+      classDescriptors = new Map();
+      for (const record of this.impl.storage.gatekeepers.list()) {
+        const facet = this.impl.getGatekeeperFacet(record.id);
+        const descriptorFacet = facet as Required<Pick<Gatekeeper<any>, "getRecoveryClassDescriptor">>;
+        const signed = await descriptorFacet.getRecoveryClassDescriptor();
+        const value = await verifyCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY,
+          signed as Awaited<ReturnType<typeof sealCapabilityDescriptor>>);
+        classDescriptors.set(record.id, await nativeClassDescriptor(value, service));
+      }
+      this.ctx.storage.kv.put(".nativeRecoveryClasses", classDescriptors);
+      for (const record of this.impl.storage.gatekeepers.list()) {
+        this.ctx.facets.abort(`gatekeeper${record.id}`, new Error("Recovery inspection"));
+      }
+    }
+    await this.ctx.storage.sync();
+  }
+
+  /** Capture root and every inventoried facet without executing gadget application code. */
+  async getRecoverySnapshot(service?: NativeRpcStub<NativeRecoveryService>): Promise<string> {
+    const recovery = readNativeRecovery(this.ctx);
+    if (!recovery) throw new Error("Native recovery inspection must be acquired before capture.");
+    await this.prepareRecovery(service);
+    const classDescriptors = this.ctx.storage.kv.get<Map<number, PortableDescriptor>>(".nativeRecoveryClasses")!;
+    const snapshot = await captureNativeRoot(this.ctx, service, new WeakMap(), classDescriptors);
+    for (const record of this.impl.storage.gadgets.list()) {
+      if (record.type !== "gadget") continue;
+      const name = this.impl.gadgetFacetName(record.id);
+      const inspector = this.ctx.facets.get<RecoveryGadgetInspector>(name, () => ({
+        class: this.ctx.exports.RecoveryGadgetInspector({ props: {
+          scope: { overseerId: this.ctx.id.toString(), gadgetId: record.id }, key: recovery.key,
+        } }),
+      }));
+      snapshot.facets.push({ name, storage: JSON.parse(await inspector.exportRecoveryStorage(service)) });
+    }
+    for (const record of this.impl.storage.gatekeepers.list()) {
+      const name = `gatekeeper${record.id}`;
+      const inspector = this.ctx.facets.get<NativeRecoveryObject>(name, () => ({ class: this.ctx.exports.NativeRecoveryObject }));
+      snapshot.facets.push({ name, storage: JSON.parse(await inspector.exportRecoveryStorage(service)) });
+    }
+    return JSON.stringify(snapshot);
+  }
+
+  /** Report a diagnostic bookmark; reads advance it, so validation compares complete contents. */
+  getRecoveryBookmark(): Promise<string> { return this.ctx.storage.getCurrentBookmark(); }
+
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
+    env = prepareRecoveryContext(ctx, env);
     super(ctx, env);
+    registerNativeRecoveryObject(this, ctx);
     this.impl = new OverseerImpl(ctx, env);
   }
 
@@ -9831,6 +10004,7 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
    * See OverseerImpl.runAlarmTasks for how the concerns are run together.
    */
   async alarm() {
+    if (readRecoveryRuntimeIdentity(this.ctx)) return;
     await this.impl.runAlarmTasks();
   }
 
@@ -10402,6 +10576,8 @@ type GatekeeperCaller = {
 };
 
 type GatekeeperLoopbackProps = {
+  recoveryScope?: string;
+  recoveryNamedIds?: RecoveryNamedIds;
   overseerId: string;
 
   target: BindingLoopbackTarget;
@@ -10435,6 +10611,7 @@ type BindingLoopbackTarget = {
  */
 export class GatekeeperLoopback extends WorkerEntrypoint<Cloudflare.Env, GatekeeperLoopbackProps> {
   constructor(ctx: ExecutionContext<GatekeeperLoopbackProps>, env: Cloudflare.Env) {
+    prepareRecoveryLoopbackContext(ctx, ctx.props.recoveryScope, ctx.props.recoveryNamedIds);
     super(ctx, env);
 
     let ns = ctx.exports.OverseerDurableObject;
@@ -10465,6 +10642,8 @@ export class GatekeeperLoopback extends WorkerEntrypoint<Cloudflare.Env, Gatekee
 }
 
 type GatekeeperHookLoopbackProps = {
+  recoveryScope?: string;
+  recoveryNamedIds?: RecoveryNamedIds;
   overseerId: string;
   hookId: number;
 };
@@ -10478,8 +10657,19 @@ type GatekeeperHookLoopbackProps = {
 export class GatekeeperHookLoopback
     extends WorkerEntrypoint<Cloudflare.Env, GatekeeperHookLoopbackProps>
     implements HookInitiator<RpcTarget> {
+  constructor(ctx: ExecutionContext<GatekeeperHookLoopbackProps>, env: Cloudflare.Env) {
+    prepareRecoveryLoopbackContext(ctx, ctx.props.recoveryScope, ctx.props.recoveryNamedIds);
+    super(ctx, env);
+  }
+
+  /** Describe the trusted callback route for isolated deployment recovery. */
+  getRecoveryDescriptor() {
+    return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "workshop-hook", props: this.ctx.props });
+  }
+
   startHook(): Promise<
       {callback: NativeRpcStub<RpcTarget>, approvalQueue: NativeRpcStub<ApprovalQueue>}> {
+    if (this.ctx.props.recoveryScope) throw new Error("Scheduled hooks remain paused in isolated recovery.");
     let ns = this.ctx.exports.OverseerDurableObject;
     let overseer: DurableObjectStub<OverseerDurableObject> =
         ns.get(ns.idFromString(this.ctx.props.overseerId));
@@ -10491,6 +10681,8 @@ export class GatekeeperHookLoopback
 }
 
 type AgentSelfLoopbackProps = {
+  recoveryScope?: string;
+  recoveryNamedIds?: RecoveryNamedIds;
   overseerId: string;
   chatId: number;
   initiatorUserId: string;
@@ -10512,6 +10704,7 @@ type AgentSelfLoopbackProps = {
 export class AgentSelfLoopback
     extends WorkerEntrypoint<Cloudflare.Env, AgentSelfLoopbackProps> {
   constructor(ctx: ExecutionContext<AgentSelfLoopbackProps>, env: Cloudflare.Env) {
+    prepareRecoveryLoopbackContext(ctx, ctx.props.recoveryScope, ctx.props.recoveryNamedIds);
     super(ctx, env);
 
     let ns = ctx.exports.OverseerDurableObject;
@@ -10522,6 +10715,9 @@ export class AgentSelfLoopback
     return new Proxy<AgentSelfLoopback>(<any>this, {
       get(target, prop, receiver) {
         if (typeof prop === 'symbol') return Reflect.get(target, prop, target);
+        if (prop === 'getRecoveryDescriptor') {
+          return () => sealCapabilityDescriptor(env.BACKUP_CAPABILITY_KEY, { kind: "workshop-agent-self", props: ctx.props });
+        }
         return (...args: unknown[]) => {
           return stub.deliverAgentCallback(
               chatId, String(prop), args, initiatorUserId, initiatorModelId);
@@ -10541,6 +10737,8 @@ export class AgentSelfLoopback
 }
 
 type GadgetTailLoopbackProps = {
+  recoveryScope?: string;
+  recoveryNamedIds?: RecoveryNamedIds;
   chatId?: number;
 
   // Which gadget's worker these logs come from.
@@ -10550,6 +10748,11 @@ type GadgetTailLoopbackProps = {
 };
 
 export class GadgetTailLoopback extends WorkerEntrypoint<Cloudflare.Env, GadgetTailLoopbackProps> {
+  constructor(ctx: ExecutionContext<GadgetTailLoopbackProps>, env: Cloudflare.Env) {
+    prepareRecoveryLoopbackContext(ctx, ctx.props.recoveryScope, ctx.props.recoveryNamedIds);
+    super(ctx, env);
+  }
+
   async #deliver(logs: ConsoleLogEvent[]) {
     let ns = this.ctx.exports.OverseerDurableObject;
     let stub: DurableObjectStub<OverseerDurableObject> =
@@ -10628,11 +10831,18 @@ export class GadgetTailLoopback extends WorkerEntrypoint<Cloudflare.Env, GadgetT
 }
 
 type CodeModeLoopbackProps = {
+  recoveryScope?: string;
+  recoveryNamedIds?: RecoveryNamedIds;
   executionId: string;
   overseerId: string;
 };
 
 export class CodeModeTailLoopback extends WorkerEntrypoint<Cloudflare.Env, CodeModeLoopbackProps> {
+  constructor(ctx: ExecutionContext<CodeModeLoopbackProps>, env: Cloudflare.Env) {
+    prepareRecoveryLoopbackContext(ctx, ctx.props.recoveryScope, ctx.props.recoveryNamedIds);
+    super(ctx, env);
+  }
+
   // TODO: Use tailStream here, but see comment in GadgetTailLoopback about excessive log spam
   //   on workerd console, need to fix that first.
 
@@ -13061,6 +13271,8 @@ class ApprovalQueueImpl extends RpcTarget implements ApprovalQueue {
 // =======================================================================================
 
 type AgentSpawnerBindingProps = {
+  recoveryScope?: string;
+  recoveryNamedIds?: RecoveryNamedIds;
   // ID of the overseer under which this agent should run.
   overseerId: string,
 
@@ -13077,6 +13289,15 @@ import AGENT_SPAWNER_BINDING_TYPES from "./agent-spawner-binding.txt";
 export class AgentSpawnerGatekeeper
     extends DurableObject<Cloudflare.Env, AgentSpawnerBindingProps>
     implements Gatekeeper<AgentSpawnerBinding> {
+  constructor(ctx: DurableObjectState<AgentSpawnerBindingProps>, env: Cloudflare.Env) {
+    prepareRecoveryLoopbackContext(ctx, ctx.props.recoveryScope, ctx.props.recoveryNamedIds);
+    super(ctx, env);
+  }
+
+  /** Preserve original creator and configuration for trusted class reconstruction. */
+  getRecoveryClassDescriptor() {
+    return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "workshop-agent-spawner-class", props: this.ctx.props });
+  }
   async describe(): Promise<ResourceDescription> {
     return {
       // TODO: Decide if we need real URLs or if `url` should stop being part of the description.
@@ -13101,6 +13322,7 @@ export class AgentSpawnerGatekeeper
 
   async startSession(approvalQueue: NativeRpcStub<ApprovalQueue>)
       : Promise<AgentSpawnerBinding> {
+    if (this.ctx.props.recoveryScope) throw new Error("Agent spawning remains paused in isolated recovery.");
     return new AgentSpawnerBindingImpl(this.ctx);
   }
 
@@ -13168,3 +13390,6 @@ class AgentSpawnerBindingImpl extends RpcTarget {
         title, options, this.ctx.props.config, this.ctx.props.creatorUserId);
   }
 }
+
+// Recovery RPC remains available while ordinary root calls are fenced.
+fenceNativeRecoveryMethods(OverseerDurableObject);

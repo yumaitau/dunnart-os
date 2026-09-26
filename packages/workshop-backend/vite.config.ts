@@ -84,6 +84,7 @@ export default {
        */
       test: {
         ...vitestTask([
+          'node --test "__tests__/standalone/*.test.ts"',
           { command: 'vitest run', idleSeconds: 120 },
           'vitest run --config vitest.integration.config.ts',
         ]),
