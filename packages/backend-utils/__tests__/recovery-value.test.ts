@@ -7,7 +7,7 @@ const roundtrip = async (value: unknown, codec?: RecoveryValueCodec) => decodePo
 describe('portable native value codec', () => {
   it('preserves cycles, shared references, collections, sparse arrays and special values', async () => {
     const shared = { label: 'shared' };
-    const sparse = new Array(4); sparse[2] = undefined;
+    const sparse: unknown[] = []; sparse.length = 4; sparse[2] = undefined;
     const root = { shared, second: shared, map: new Map<unknown, unknown>(), set: new Set<unknown>(),
       sparse, date: new Date('2026-01-01'), invalidDate: new Date(NaN), nullObject: Object.assign(Object.create(null), { ok: true }),
       values: [undefined, 4n, -9n, NaN, Infinity, -Infinity, -0] };

@@ -116,7 +116,7 @@ export async function encodePortableValue(value: unknown, codec?: RecoveryValueC
 export async function decodePortableValue(portable: PortableValue, codec?: RecoveryValueCodec): Promise<unknown> {
   if (!portable || portable.version !== 1 || !Array.isArray(portable.nodes)) return fail('$', 'invalid portable graph');
   const nodes = portable.nodes;
-  const objects: unknown[] = new Array(nodes.length);
+  const objects: unknown[] = Array.from({ length: nodes.length });
   const ready = new Set<number>();
   const resolving = new Set<number>();
   const atom = async (value: Atom, path: string): Promise<unknown> => {
@@ -147,9 +147,12 @@ export async function decodePortableValue(portable: PortableValue, codec?: Recov
         if (typeof node.nullPrototype !== 'boolean') return fail(path, 'invalid object');
         value = node.nullPrototype ? Object.create(null) : {};
         break;
-      case 'array':
+      case 'array': {
         if (!Number.isInteger(node.length) || node.length < 0 || node.length > 0xffffffff) return fail(path, 'invalid array length');
-        value = new Array(node.length); break;
+        // Missing indexes must remain holes, rather than present undefined elements.
+        const array: unknown[] = []; array.length = node.length;
+        value = array; break;
+      }
       case 'map': value = new Map(); break;
       case 'set': value = new Set(); break;
       case 'date': {

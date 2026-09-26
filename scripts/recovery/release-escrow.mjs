@@ -136,7 +136,7 @@ export async function sealRelease({ inputPath, kitPath, outputDirectory }) {
   const input = parseJson(await readBounded(inputPath, MAX_METADATA_BYTES));
   if (!isObject(input) || input.version !== 1 || !isObject(input.files)) fail('Invalid release input manifest.');
   releaseId(input.releaseId);
-  const paths = Object.keys(input.files).sort();
+  const paths = Object.keys(input.files).toSorted();
   validateArchivePaths(paths);
   const kit = await readKit(kitPath);
   const kitRealPath = await realpath(kitPath);

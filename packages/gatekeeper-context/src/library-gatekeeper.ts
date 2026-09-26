@@ -475,6 +475,7 @@ export class ContextRecoveryParticipant extends NativeRpcTarget implements Gatek
       for (const record of await library.listOwnedCollections()) await this.exports.ContextCollectionDurableObject
         .getByName(domainName(this.domain, record.id)).validateRecovery(run);
     }
+    // eslint-disable-next-line unicorn/no-useless-spread -- Awaited exports update this map; preserve the original validation baselines.
     for (const [key, captured] of [...this.#captured]) {
       const current = key === "domain" ? await this.exportDomain() : await this.exportAccount(key.slice(8));
       this.#captured.set(key, captured);
