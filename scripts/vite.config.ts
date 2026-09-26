@@ -29,7 +29,7 @@ export default {
   run: {
     tasks: {
       test: {
-        command: withTestTimeout("node --test 'scripts/**/*.test.ts'"),
+        command: withTestTimeout("node --test 'scripts/**/*.test.ts' 'scripts/recovery/*.test.mjs'"),
         env: TESTS_WITH_TIMEOUT_ENV,
         cwd: "..",
         // Workspace-wide, matching `cwd`: the suites read across `packages/` and the root manifests,

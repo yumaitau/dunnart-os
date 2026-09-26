@@ -4,11 +4,16 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [
     cloudflareTest({
+      main: "./__tests__/recovery-native-worker.ts",
       miniflare: {
+        durableObjects: { NATIVE_RECOVERY_TEST: { className: "NativeRecoveryFixture", useSQLite: true } },
+        r2Buckets: ["RECOVERY_TEST", "RECOVERY_R2_SOURCE", "RECOVERY_R2_TARGET"],
+        kvNamespaces: ["RECOVERY_KV_SOURCE", "RECOVERY_KV_TARGET"],
+        d1Databases: ["RECOVERY_D1_SOURCE", "RECOVERY_D1_TARGET"],
         compatibilityDate: "2026-09-04",
         // nodejs_als enables observability context; experimental enables the Reporter stub below
         // and the streaming_tail_worker flag (which workerd refuses without experimental mode).
-        compatibilityFlags: ["experimental", "nodejs_als", "streaming_tail_worker"],
+        compatibilityFlags: ["experimental", "nodejs_als", "streaming_tail_worker", "allow_irrevocable_stub_storage"],
         serviceBindings: {
           ERROR_REPORTER: { name: "reporter", entrypoint: "ErrorReporter" },
         },

@@ -17,7 +17,7 @@ export async function embedTexts(ai: Ai, texts: string[]): Promise<number[][]> {
       throw new Error("Invalid embedding response.");
     }
     return result.data;
-  } finally { clearTimeout(timer); }
+  } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 
 /** Cosine similarity, with malformed or incompatible vectors treated as unrelated. */

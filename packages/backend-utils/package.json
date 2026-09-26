@@ -23,6 +23,38 @@
     "./semantic": {
       "types": "./src/semantic.ts",
       "import": "./src/semantic.ts"
+    },
+    "./recovery-archive": {
+      "types": "./src/recovery-archive.ts",
+      "import": "./src/recovery-archive.ts"
+    },
+    "./recovery-repository": {
+      "types": "./src/recovery-repository.ts",
+      "import": "./src/recovery-repository.ts"
+    },
+    "./recovery-kv": {
+      "types": "./src/recovery-kv.ts",
+      "import": "./src/recovery-kv.ts"
+    },
+    "./recovery-d1": {
+      "types": "./src/recovery-d1.ts",
+      "import": "./src/recovery-d1.ts"
+    },
+    "./recovery-r2": {
+      "types": "./src/recovery-r2.ts",
+      "import": "./src/recovery-r2.ts"
+    },
+    "./recovery-value": {
+      "types": "./src/recovery-value.ts",
+      "import": "./src/recovery-value.ts"
+    },
+    "./recovery-native": {
+      "types": "./src/recovery-native.ts",
+      "import": "./src/recovery-native.ts"
+    },
+    "./recovery-capability": {
+      "types": "./src/recovery-capability.ts",
+      "import": "./src/recovery-capability.ts"
     }
   },
   "scripts": {
