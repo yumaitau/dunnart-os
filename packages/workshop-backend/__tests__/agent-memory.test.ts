@@ -55,6 +55,17 @@ describe("workspace semantic memory", () => {
     expect(state.storage.sql.exec("SELECT id FROM agent_memory").toArray()).toHaveLength(0);
   }));
 
+  it("includes newer corrections when the original question is repeated exactly", () => inside(async (_, state) => {
+    const { ai, run } = embeddings(); const memory = new AgentMemory(state.storage.sql, ai, () => true);
+    await memory.remember(source({ recordedAt: Date.now() - 1000 }));
+    await memory.remember(source({ question: "Correction to our release steps", answer: "Staging approval is now required.", chatId: 2 }));
+    const calls = run.mock.calls.length;
+    const recalled = await memory.recall(source().question);
+    expect(recalled).toContain("Staging approval is now required.");
+    expect(recalled.indexOf('"sourceChatId":2')).toBeLessThan(recalled.indexOf('"sourceChatId":1'));
+    expect(run).toHaveBeenCalledTimes(calls);
+  }));
+
   it("does not resurrect a source removed while embedding was pending", () => inside(async (_, state) => {
     let release!: (value: { data: number[][] }) => void;
     let started!: () => void;

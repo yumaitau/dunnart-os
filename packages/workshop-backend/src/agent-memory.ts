@@ -87,13 +87,11 @@ export class AgentMemory {
     });
     if (!rows.length || !question.trim()) return "";
     const exact = rows.filter(row => normalize(row.question) === normalize(question));
-    let matches: { row: MemoryRow; score: number }[];
-    if (exact.length) matches = exact.map(row => ({ row, score: 1 }));
-    else {
-      const [query] = await embedTexts(this.ai, [question]);
-      matches = rows.map(row => ({ row, score: cosine(query, JSON.parse(row.vector)) }))
-        .filter(item => item.score >= 0.72).toSorted((a, b) => b.score - a.score);
-    }
+    // Even an exact repeat must see newer related corrections. Reuse its saved vector,
+    // rather than returning the old answer alone or paying to embed the same question again.
+    const query: number[] = exact.length ? JSON.parse(exact[0].vector) : (await embedTexts(this.ai, [question]))[0];
+    const matches = rows.map(row => ({ row, score: exact.includes(row) ? 1 : cosine(query, JSON.parse(row.vector)) }))
+      .filter(item => item.score >= 0.72).toSorted((a, b) => b.score - a.score);
     // Revalidate after model I/O; deleted/reverted chats cannot be resurrected by a stale read.
     const selected = matches.filter(item => this.sourceIsCurrent(item.row)).slice(0, 4)
       .toSorted((a, b) => b.row.recordedAt - a.row.recordedAt);
