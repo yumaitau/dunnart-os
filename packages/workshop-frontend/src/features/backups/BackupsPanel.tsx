@@ -96,6 +96,7 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
           )}
           <p className="text-sm">Next scheduled run: {status.nextRunAt === null ? 'Not scheduled' : utcTime(status.nextRunAt)}</p>
           {status.running && <p role="status" className="text-sm">Backup running. Status updates automatically.</p>}
+          <p className="text-sm text-kumo-subtle dark:text-kumo-default">Capture briefly pauses writes and reconnects active sessions.</p>
           <Button variant="primary" disabled={busy || !!statusError || !ready || status.running} onClick={() => void perform(async (isCurrent) => {
             const next = await admin.startBackup()
             if (!isCurrent()) return null
@@ -115,12 +116,22 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
             })} />
         </section>
         <section aria-label="Backup history" className="rounded-xl border border-kumo-line bg-kumo-elevated p-6 space-y-4">
-          <h3 className="font-semibold text-kumo-strong">Run history</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-semibold text-kumo-strong">Run history</h3>
+            <Button disabled={busy || status.running} onClick={() => void perform(async (isCurrent) => {
+              const next = await admin.rescanBackupArchives()
+              if (!isCurrent()) return null
+              ++request.current
+              setStatus(next)
+              return 'Archive storage rescanned. Run history refreshed.'
+            })}>Rescan archive storage</Button>
+          </div>
+          <p className="text-sm text-kumo-subtle dark:text-kumo-default">Find previously saved archives and rebuild missing run history. Each archive is verified before it is imported.</p>
           {status.runs.length === 0 && <p className="text-sm text-kumo-subtle dark:text-kumo-default">No backups recorded.</p>}
           <ul className="space-y-4">{status.runs.map((run) => (
             <li key={run.id} className="border-t border-kumo-line pt-4 space-y-2">
               <h4 className="text-sm font-semibold break-all">{run.id}</h4>
-              <p className="text-sm">{run.status === 'complete' ? 'Complete' : run.status === 'failed' ? 'Failed' : 'Running'} · {run.trigger === 'manual' ? 'Manual' : 'Scheduled'} · {utcTime(run.startedAt)}</p>
+              <p className="text-sm">{run.status === 'complete' ? 'Complete' : run.status === 'failed' ? 'Failed' : 'Running'} · {run.trigger === 'manual' ? 'Manual' : run.trigger === 'scheduled' ? 'Scheduled' : 'Recovered from archive storage'} · {utcTime(run.startedAt)}</p>
               {run.finishedAt !== null && <p className="text-sm text-kumo-subtle dark:text-kumo-default">Finished: {utcTime(run.finishedAt)}</p>}
               <p className="text-sm text-kumo-subtle dark:text-kumo-default">{run.components} components · {run.bytes.toLocaleString()} bytes</p>
               {run.error && <p className="border-l-4 border-kumo-danger pl-3 text-sm text-kumo-default">{run.error}</p>}

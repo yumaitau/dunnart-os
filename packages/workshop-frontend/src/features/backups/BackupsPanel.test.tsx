@@ -30,6 +30,7 @@ describe('BackupsPanel', () => {
     status = initialStatus()
     admin = {
       getBackupStatus: vi.fn<BackupsApi['getBackupStatus']>(async () => status),
+      rescanBackupArchives: vi.fn<BackupsApi['rescanBackupArchives']>(async () => status),
       setBackupSchedule: vi.fn<BackupsApi['setBackupSchedule']>(async (schedule) => { status = { ...status, schedule }; return status }),
       startBackup: vi.fn<BackupsApi['startBackup']>(async () => { status = { ...status, running: true }; return status }),
       verifyBackup: vi.fn<BackupsApi['verifyBackup']>(async (runId) => ({ runId, verified: true, issues: [] })),
@@ -165,6 +166,35 @@ describe('BackupsPanel', () => {
     admin.getBackupStatus.mockResolvedValue(status)
     await click('Refresh status')
     expect(container.textContent).toContain('Ready for backups')
+  })
+
+  it('imports verified archives into an empty run history after an explicit rescan', async () => {
+    status = { ...status, runs: [] }
+    admin.rescanBackupArchives.mockImplementation(async () => {
+      status = { ...status, runs: [{ ...initialStatus().runs[0]!, id: 'recovered-archive', trigger: 'recovered' }] }
+      return status
+    })
+    await render()
+    expect(container.textContent).toContain('No backups recorded.')
+    expect(admin.rescanBackupArchives).not.toHaveBeenCalled()
+    await click('Rescan archive storage')
+    expect(admin.rescanBackupArchives).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('Archive storage rescanned. Run history refreshed.')
+    expect(container.textContent).toContain('recovered-archive')
+    expect(container.textContent).toContain('Recovered from archive storage')
+    expect(button('Preview restore recovered-archive').disabled).toBe(false)
+    expect(container.textContent).not.toContain('No backups recorded.')
+  })
+
+  it('reports a failed archive rescan without inventing recovered history', async () => {
+    status = { ...status, runs: [] }
+    admin.rescanBackupArchives.mockRejectedValue(new Error('Archive verification failed. Check the configured signing key.'))
+    await render()
+    await click('Rescan archive storage')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Archive verification failed. Check the configured signing key.')
+    expect(container.textContent).toContain('No backups recorded.')
+    expect(container.textContent).not.toContain('Run history refreshed.')
+    expect(button('Rescan archive storage').disabled).toBe(false)
   })
 
   it('preserves an operation failure across successful background refreshes', async () => {
