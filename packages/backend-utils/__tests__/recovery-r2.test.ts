@@ -47,7 +47,8 @@ describe("R2 recovery adapter", () => {
     const first = await exportWithChunks(65_537);
     expect(await recoveryDigest(await exportWithChunks(262_144))).toBe(await recoveryDigest(first));
     await r2RecoveryTarget("r2", target).stage(new Response(first).body!);
-    expect(new Uint8Array(await (await target.get("chunked"))!.arrayBuffer())).toEqual(bytes);
+    expect(await recoveryDigest(new Uint8Array(await (await target.get("chunked"))!.arrayBuffer())))
+      .toBe(await recoveryDigest(bytes));
   });
   it("restores bytes, empty objects and metadata across listing pages", async () => {
     const cacheExpiry = new Date("2030-01-01T00:00:00.000Z");

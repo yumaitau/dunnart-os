@@ -271,12 +271,7 @@ export class DeploymentBackups extends DurableObject<DeploymentBackupEnv> {
     } catch {
       // Provider exceptions may include credentials or customer content. Persist only bounded,
       // operator-actionable categories; underlying errors never enter logs or the admin response.
-      const marker = await this.ctx.storage.get<{ phase?: unknown; component?: unknown }>(`recovery-provider/phase/${run.id}`);
-      const allowed = new Set(["maintenance-drain", "release-escrow", "storage-baseline", "user-fence",
-        "workspace-fence", "root-fence", "connector-fence", "native-baseline", "linked-record-validation", "component-capture", "final-source-validation"]);
-      const phase = typeof marker?.phase === "string" && allowed.has(marker.phase) ? marker.phase : undefined;
-      const component = typeof marker?.component === "string" && /^[a-f0-9]{16}$/.test(marker.component) ? marker.component : undefined;
-      const diagnostic = phase ? ` [${phase}${component ? `:${component}` : ""}]` : "";
+      const diagnostic = await this.phaseDiagnostic(run.id);
       run.error = `Backup failed: required coverage, stable capture, or archive integrity could not be verified. Check deployment readiness and retry.${diagnostic}`;
     }
     try { await this.recovery.release(run.id); }
@@ -347,7 +342,21 @@ export class DeploymentBackups extends DurableObject<DeploymentBackupEnv> {
       result.target = preview.target; result.issues.push(...preview.issues);
     } catch { result.issues.push("Isolated recovery target availability could not be verified."); }
     result.ready = result.issues.length === 0;
+    if (!result.ready) {
+      const diagnostic = await this.phaseDiagnostic(id, true);
+      if (diagnostic) result.issues.push(`Last isolated restore operation:${diagnostic}`);
+    }
     return result;
+  }
+
+  private async phaseDiagnostic(id: string, restoreOnly = false): Promise<string> {
+    const marker = await this.ctx.storage.get<{ phase?: unknown; component?: unknown }>(`recovery-provider/phase/${id}`);
+    const allowed = new Set(["restore-component", "restore-runtime-prepare", "restore-runtime-activate", "restore-runtime-verify",
+      ...restoreOnly ? [] : ["maintenance-drain", "release-escrow", "storage-baseline", "user-fence", "workspace-fence", "root-fence",
+        "connector-fence", "native-baseline", "linked-record-validation", "component-capture", "final-source-validation"]]);
+    const phase = typeof marker?.phase === "string" && allowed.has(marker.phase) ? marker.phase : undefined;
+    const component = typeof marker?.component === "string" && /^[a-f0-9]{16}$/.test(marker.component) ? marker.component : undefined;
+    return phase ? ` [${phase}${component ? `:${component}` : ""}]` : "";
   }
 
   /** Stage into isolated inactive storage. The supplied private key exists only during this call. */
@@ -361,6 +370,6 @@ export class DeploymentBackups extends DurableObject<DeploymentBackupEnv> {
       await this.recovery.finalizeRestore(id, required);
       return { ...preview, staged: true };
     } catch { return { ...preview, ready: false, staged: false,
-      issues: ["Isolated staging failed. Check the private recovery key and target availability. Production was not activated."] }; }
+      issues: [`Isolated staging failed. Check the private recovery key and target availability. Production was not activated.${await this.phaseDiagnostic(id, true)}`] }; }
   }
 }

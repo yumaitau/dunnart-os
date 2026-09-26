@@ -158,6 +158,23 @@ describe("deployment backup coordinator", () => {
     expect(result.ready).toBe(false);
   });
 
+  it.each([
+    [{ phase: "restore-component", component: "b".repeat(16) }, "[restore-component:bbbbbbbbbbbbbbbb]"],
+    [{ phase: "private-content", component: "private-content" }, ""],
+  ])("reports only bounded restore diagnostics", async (marker, expected) => {
+    const { stub } = await fixture({ finalizeRestore: async () => { throw new Error("private-content"); } });
+    const id = (await stub.startBackup()).runs[0].id;
+    await runDurableObjectAlarm(stub);
+    await runInDurableObject(stub, async (_instance, ctx) => {
+      await ctx.storage.put(`recovery-provider/phase/${id}`, marker);
+    });
+    const result = await stub.stageBackupRestore(id, privateKey);
+    expect(result.staged).toBe(false);
+    expect(result.issues.join(" ")).not.toContain("private-content");
+    if (expected) expect(result.issues.join(" ")).toContain(expected);
+    else expect(result.issues.join(" ")).not.toContain("[");
+  });
+
   it("keeps the latest verified archive when retention removes an older run", async () => {
     const { stub } = await fixture();
     await stub.setBackupSchedule({ ...DEFAULT_BACKUP_SCHEDULE, retention: 1 });
