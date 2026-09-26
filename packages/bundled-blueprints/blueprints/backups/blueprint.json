@@ -1,0 +1,12 @@
+{
+  "blueprintId": "format.backups",
+  "title": "Backups",
+  "description": "Open trusted deployment backup controls to review coverage, configure schedules, verify encrypted archives, and stage an isolated restore. Deployment administrator access is required.",
+  "output": { "id": "backups", "noun": "Backups", "plural": "Backups", "icon": "appWindow" },
+  "author": { "type": "user", "name": "Dunnart", "id": "dunnart-backups" },
+  "revision": 1,
+  "created": "2026-09-26T00:00:00.000Z",
+  "version": 1,
+  "lastUpdated": "2026-09-26T00:00:00.000Z",
+  "bindings": {}
+}

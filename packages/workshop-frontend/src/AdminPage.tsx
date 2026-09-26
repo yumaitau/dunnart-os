@@ -12,6 +12,7 @@ import { useServerConfig } from './ServerConfigContext'
 import SiteLogo from './components/SiteLogo'
 import { useDocumentTitle } from './useDocumentTitle'
 import AdminFormatsPanel from './components/format/AdminFormatsPanel'
+import { BackupsPanel } from './features/backups/BackupsPanel'
 
 // Preset accent colors offered in the Theme section ('' = default brand).
 const ACCENT_PRESETS: { label: string; value: string }[] = [
@@ -98,7 +99,7 @@ export default function AdminPage() {
   const [resourceVendors, setResourceVendors] = useState<AdminResourceVendor[]>([])
   const [resourceBusy, setResourceBusy] = useState<Set<string>>(new Set())
 
-  const [activeTab, setActiveTab] = useState('general')
+  const [activeTab, setActiveTab] = useState(() => window.location.hash === '#backups' ? 'backups' : 'general')
 
   // Promoted output formats, in menu order (see AdminFormatsPanel).
   const [formats, setFormats] = useState<AdminFormat[]>([])
@@ -511,8 +512,11 @@ export default function AdminPage() {
           { value: 'gatekeepers', label: 'Gatekeepers' },
           { value: 'formats', label: 'Formats' },
           { value: 'access', label: 'Access' },
+          { value: 'backups', label: 'Backups' },
         ]}
       />
+
+      {activeTab === 'backups' && admin && <BackupsPanel admin={admin.api} />}
 
       {/* Standard output formats */}
       {activeTab === 'formats' && admin && (
