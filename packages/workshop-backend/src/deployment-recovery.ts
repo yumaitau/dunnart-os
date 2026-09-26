@@ -32,6 +32,11 @@ async function acquireNative(begin: () => Promise<void>): Promise<void> {
 const safe = (value: string) => { if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) throw new Error("Invalid recovery identifier."); return value; };
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
 const nativeContent = (snapshot: string) => { const { bookmark: _bookmark, ...content } = JSON.parse(snapshot); return JSON.stringify(content); };
+// Descriptor props may be constructed in a different order by their trusted restore adapter.
+// Portable storage preserves meaningful property/map order and aliases in arrays, which stay intact.
+const canonicalJson = (value: unknown) => JSON.stringify(value, (_key, item) =>
+  item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).toSorted().map(key => [key, item[key]])) : item);
 const textSource = (id: string, read: () => Promise<string>): RecoverySource => ({ id, version: 1,
   async export() {
     const value = await read();
@@ -489,7 +494,7 @@ export function createDeploymentRecovery(env: RecoveryEnv, exports: Cloudflare.E
           await target.stageRecoverySnapshot(snapshot, service);
           const restored: NativeRecoverySnapshot = JSON.parse(await target.getRecoverySnapshot(service));
           const original: NativeRecoverySnapshot = JSON.parse(snapshot);
-          if (JSON.stringify(restored.storage) !== JSON.stringify(original.storage) || JSON.stringify(restored.facets) !== JSON.stringify(original.facets)) {
+          if (canonicalJson(restored.storage) !== canonicalJson(original.storage) || canonicalJson(restored.facets) !== canonicalJson(original.facets)) {
             throw new Error(`Native restored storage verification failed for ${id}.`);
           }
           if (id.startsWith("user-")) await target.invalidateRecoverySessions();

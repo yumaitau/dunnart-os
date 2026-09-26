@@ -296,3 +296,35 @@ it("rejects a native class whose retained connector account is absent from captu
   await expect(provider.acquire("orphan-connector-class")).rejects.toThrow("account or domain outside the frozen recovery inventory");
   await provider.release("orphan-connector-class");
 });
+
+it.each([false, true])("compares restored connector descriptor values independently of property order (tampered=%s)", async tampered => {
+  const f = await fixture();
+  f.env.BACKUP_RESTORE = (testEnv as typeof testEnv & { BACKUPS: R2Bucket }).BACKUPS;
+  const sourceAccount = {};
+  // Context's real createAccount and restoreCapability construct props in opposite orders.
+  const sourceDescriptor = { kind: "context-account", props: { sharingDomain: "domain", accountId: "account1" } };
+  const snapshot = JSON.stringify({ id: userId, bookmark: "source", facets: [], storage: { version: 1, alarm: null,
+    values: await encodePortableValue({ kv: new Map([["connectedAccounts:1", { account: sourceAccount }]]), schema: [], tables: [], sequences: [] }, {
+      describe(value) { return value === sourceAccount ? sourceDescriptor : undefined; }, restore(value) { return value; },
+    }),
+  } });
+  const run = `descriptor-order-${tampered}`;
+  Object.assign(f.exports, { NativeRecoveryObject: { getByName: () => ({
+    stageRecoverySnapshot: async () => {},
+    async getRecoverySnapshot(service: { describe(value: object, path: string): Promise<string | null> }) {
+      const result = JSON.parse(snapshot);
+      const restoredAccount = { getRecoveryDescriptor: () => sealCapabilityDescriptor(capabilityKey, {
+        kind: "context-account", props: { accountId: tampered ? "another-account" : "account1", sharingDomain: `recovery:recovery-${run}:domain` },
+      }) };
+      const node = result.storage.values.nodes.find((node: { kind: string }) => node.kind === "capability");
+      node.descriptor = JSON.parse((await service.describe(restoredAccount, "$account"))!);
+      return JSON.stringify(result);
+    },
+    invalidateRecoverySessions: async () => {},
+  }) } });
+  const provider = createDeploymentRecovery(f.env, f.exports, f.storage, f.maintenance);
+  const targets = await provider.targets(run, [`user-${userId}`]);
+  const stage = targets[0]!.stage(new Response(snapshot).body!);
+  if (tampered) await expect(stage).rejects.toThrow("Native restored storage verification failed");
+  else await expect(stage).resolves.toBeUndefined();
+});
