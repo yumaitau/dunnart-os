@@ -420,6 +420,12 @@ export function makeStoredAssistantMessage(message: AssistantMessage): StoredAss
 export interface AgentHooks {
   getChatAgentContext(chatId: number): AiChatAgentContext;
 
+  /** Recall workspace history before researching a new user question; unavailable to spawned agents. */
+  recallAgentMemory?(chatId: number, question: string): Promise<string>;
+
+  /** Index the durable final answer of a completed user turn for subsequent conversations. */
+  rememberAgentTurn?(chatId: number): Promise<void>;
+
   /**
    * The step's persistence barrier: in one storage transaction, persist the step's chat
    * messages (`msgs`, the tool-call record among them), validate and append each buffered
@@ -1256,7 +1262,12 @@ export async function runAgent(
     let outcome = await runAgentPass(
         hooks, handle, chatId, author, history, abortSignal, initiator, modelConfig);
     if (outcome.type === "compacted") hooks.commitChatCompaction(chatId, outcome.checkpoint);
-    if (outcome.type === "finished" || isCompactionTurn(history.chatMessages)) return;
+    if (outcome.type === "finished" || isCompactionTurn(history.chatMessages)) {
+      if (outcome.type === "finished" && !isCompactionTurn(history.chatMessages)) {
+        await hooks.rememberAgentTurn?.(chatId);
+      }
+      return;
+    }
     abortSignal.throwIfAborted();
   }
 }
@@ -2720,6 +2731,12 @@ async function runAgentPass(
     systemPromptSlots[0] += `\n\n${instanceInstructions}`;
   }
   let systemPrompt = `${systemPromptSlots[0]}\n\n${systemPromptSlots[1]}`;
+  const memoryQuestion = chatMessages.findLast(message => message.type === "message"
+    && message.author.type === "user");
+  if (memoryQuestion?.type === "message" && !isCompactionTurn(chatMessages)) {
+    const recalled = await hooks.recallAgentMemory?.(chatId, memoryQuestion.message);
+    if (recalled) systemPrompt += `\n\n${recalled}`;
+  }
 
   // Some models charge their response to the same window as the prompt, so the reservation is both
   // withheld from the prompt's budget and sent as the response cap -- the two can't disagree.

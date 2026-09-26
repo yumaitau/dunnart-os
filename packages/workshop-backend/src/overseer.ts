@@ -1,3 +1,4 @@
+import { AgentMemory, type MemorySource } from "./agent-memory";
 import { RpcCompatible, RpcStub, RpcTarget } from "capnweb";
 import { validateRpc } from "capnweb-validate";
 import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, ActionHistoryFilter, ActionHistoryPage, ChatGadgetPin, ChatCodeBase, ChatGadgetPinState, CodeChangeSubmission, CommitIdentity, CommitInfo, FileAtCommit, MAX_READ_FILES_PER_CALL, TreeNode, MergeChangesResult, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName, actionChangeTime } from '@gadgets/workshop-shared/api';
@@ -1560,6 +1561,58 @@ export function sanitizeMessageFormatRefs(
 type SessionKind = CollaboratorRole | "owner";
 
 class OverseerImpl implements AgentHooks {
+  #agentMemory?: AgentMemory;
+
+  private memory(): AgentMemory | undefined {
+    if (!this.env.WORKERS_AI || this.env.SEMANTIC_MEMORY_ENABLED === "false") return;
+    return this.#agentMemory ??= new AgentMemory(this.ctx.storage.sql, this.env.WORKERS_AI, source => {
+      if (!this.storage.chatMeta.get(source.chatId) || this.getChatAgentContext(source.chatId).spawnerConfig) return false;
+      const question = this.storage.chats.get(`${keyString(source.chatId)}.${keyString(source.questionSequence)}`);
+      const answer = this.storage.chats.get(`${keyString(source.chatId)}.${keyString(source.answerSequence)}`);
+      return question?.type === "message" && question.message === source.question
+        && answer?.type === "message" && answer.message === source.answer
+        && answer.timestamp.valueOf() === source.recordedAt;
+    });
+  }
+
+  async recallAgentMemory(chatId: number, question: string): Promise<string> {
+    if (this.getChatAgentContext(chatId).spawnerConfig) return "";
+    try {
+      const memory = this.memory();
+      if (!memory) return "";
+      if (memory.needsBootstrap()) {
+        const sources = [...this.storage.chatMeta.list({ reverse: true, limit: 12 })]
+          .map(meta => this.completedMemorySource(meta.id)).filter(source => source !== undefined);
+        await memory.bootstrap(sources);
+      }
+      return await memory.recall(question);
+    } catch { this.logger.warn("workspace recall unavailable", { event: "memory.recall.failed" }); return ""; }
+  }
+
+  private completedMemorySource(chatId: number): MemorySource | undefined {
+    if (this.getChatAgentContext(chatId).spawnerConfig) return;
+    const recent = [...this.storage.chats.list({ prefix: `${keyString(chatId)}.`, reverse: true, limit: 100 })];
+    const answer = recent.find(message => message.type === "message"
+      && message.author.type === "agent" && !message.toolCalls?.length && message.message.trim());
+    if (answer?.type !== "message") return;
+    const question = recent.find(message => message.sequence < answer.sequence
+      && message.type === "message" && message.author.type === "user");
+    if (question?.type !== "message" || question.generatedBySlashCommandSequence !== undefined) return;
+    return { chatId, questionSequence: question.sequence, answerSequence: answer.sequence,
+      question: question.message, answer: answer.message, recordedAt: answer.timestamp.valueOf() };
+  }
+
+  async rememberAgentTurn(chatId: number): Promise<void> {
+    const source = this.completedMemorySource(chatId);
+    if (!source) return;
+    try { await this.memory()?.remember(source); }
+    catch { this.logger.warn("workspace memory indexing unavailable", { event: "memory.remember.failed" }); }
+  }
+
+  forgetChatMemory(chatId: number): void {
+    // Also erase when the feature was disabled after a previous deployment indexed this chat.
+    AgentMemory.forgetChat(this.ctx.storage.sql, chatId);
+  }
   public storage: OverseerStorage;
   readonly logger: ReturnType<typeof createWorkshopLogger>;
 
@@ -7078,6 +7131,7 @@ class OverseerImpl implements AgentHooks {
   // `revertFrom` onward, so any checkpoint that folded in those changes can never be replayed again
   // and is deleted; earlier ones stay, which is what lets a revert cross a boundary at all.
   rollbackChatCompaction(meta: AiChatMetadata, revertFrom: number): void {
+    this.forgetChatMemory(meta.id);
     // Buffer the keys first: deleting invalidates the list cursor.
     let stale = Array.from(
         this.storage.chatCompactions.list({
@@ -11806,6 +11860,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     // and provisional binding edges.
     await this.impl.removeChatWorkpieces(chatId);
     this.impl.storage.chatMeta.delete(chatId);
+    this.impl.forgetChatMemory(chatId);
     this.impl.storage.chatContext.delete(chatId);
     // Buffer the keys first: deleting invalidates the list cursor.
     let checkpoints = Array.from(
