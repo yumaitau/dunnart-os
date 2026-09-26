@@ -27,17 +27,29 @@ export function r2RecoverySource(id: string, bucket: R2Bucket): RecoverySource {
             storageClass: object.storageClass || "Standard" });
           const reader = object.body.getReader();
           let bytes = 0;
+          const frame = new Uint8Array(FRAME_BYTES);
+          let offset = 0;
           try {
             for (;;) {
               const next = await reader.read();
               if (next.done) break;
               bytes += next.value.length;
-              for (let start = 0; start < next.value.length; start += FRAME_BYTES) {
-                yield encode({ kind: "data", value: recoveryBase64(next.value.subarray(start, start + FRAME_BYTES)) });
+              // Network read boundaries vary between identical R2 reads. Fixed frames keep the
+              // frozen source digest stable during capture validation and restored readback.
+              let consumed = 0;
+              while (consumed < next.value.length) {
+                const take = Math.min(FRAME_BYTES - offset, next.value.length - consumed);
+                frame.set(next.value.subarray(consumed, consumed + take), offset);
+                offset += take; consumed += take;
+                if (offset === FRAME_BYTES) {
+                  yield encode({ kind: "data", value: recoveryBase64(frame) });
+                  offset = 0;
+                }
               }
             }
           } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
           if (bytes !== object.size) throw new Error("Truncated R2 recovery source.");
+          if (offset) yield encode({ kind: "data", value: recoveryBase64(frame.subarray(0, offset)) });
           yield encode({ kind: "end" });
         }
         cursor = page.truncated ? page.cursor : undefined;
