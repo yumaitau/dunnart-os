@@ -9,6 +9,7 @@ export default defineConfig({
       compatibilityDate: "2026-09-04",
       compatibilityFlags: ["nodejs_compat", "allow_irrevocable_stub_storage"],
       kvNamespaces: ["CONTEXT_COLLECTIONS"],
+      bindings: { BACKUP_CAPABILITY_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" },
       durableObjects: {
         COLLECTIONS: { className: "ContextCollectionDurableObject", useSQLite: true },
         LIBRARIES: { className: "UserLibraryDurableObject", useSQLite: true },

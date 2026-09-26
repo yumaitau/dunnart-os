@@ -1,3 +1,4 @@
+import { sealCapabilityDescriptor } from "@gadgets/backend-utils/recovery-capability";
 import { DurableObject, RpcTarget, WorkerEntrypoint } from "cloudflare:workers";
 import type { ScheduleDriver } from "../src/schedule-driver.js";
 import type { ScheduleSummary } from "../src/types.js";
@@ -136,6 +137,9 @@ class TestCallback extends RpcTarget {
 
 /** Test-only persistent hook initiator. */
 export class TestHooks extends WorkerEntrypoint {
+  /** Test attestation uses a public fixture key, never deployment material. */
+  getRecoveryDescriptor() { return sealCapabilityDescriptor("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", { kind: "workshop-hook", props: { overseerId: "source-workspace", hookId: 7 } }); }
+
   async startHook(): Promise<{ callback: TestCallback; approvalQueue: TestApprovalQueue }> {
     events.push("start");
     mark("start");

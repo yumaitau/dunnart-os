@@ -1,3 +1,4 @@
+import type { GatekeeperRecoveryParticipant } from "./gatekeeper-recovery";
 // This file defines the API that the AI Gadgets Workshop uses to talk to Adapters. Each Adapter
 // provides connectivity to some external service which AI Gadgets can then manipulate. Each
 // installation of the Gadgets Workshop may have access to different adapters, typically based on
@@ -467,6 +468,9 @@ export type ConnectHandoff = {
 };
 
 export interface GatekeeperVendor extends WorkerEntrypoint {
+  /** Mint deployment recovery authority only for the trusted Workshop service binding. */
+  getRecoveryParticipant?(): GatekeeperRecoveryParticipant;
+
   /** Get display info for the service, suitable for display to a user. */
   describe(): Promise<VendorDescription>;
 
@@ -619,6 +623,9 @@ export interface GatekeeperConnectCallback extends WorkerEntrypoint {
  * ever have direct access to an Adapter object.
  */
 export interface GatekeeperUser extends WorkerEntrypoint {
+  /** Attest this existing account identity for trusted encrypted deployment recovery. */
+  getRecoveryDescriptor?(): Promise<{ payload: string; signature: string }>;
+
   /** Get display info for an account, suitable for display to a user. */
   describe(): Promise<AccountDescription>;
 
@@ -773,6 +780,9 @@ export interface GatekeeperUserVerifier extends WorkerEntrypoint {}
  * interface is exposed to the Overseer, not directly to the Gadget.
  */
 export interface Gatekeeper<Session> extends DurableObject {
+  /** Describe this existing class capability for encrypted native recovery; descriptors alone confer no authority. */
+  getRecoveryClassDescriptor?(): unknown;
+
   /**
    * Get more info on the specific resource without actually granting access. This information is
    * to be presented to the user in the UI, before the user actually confirms they want to grant
@@ -1434,6 +1444,9 @@ export interface HookController<Hook extends RpcTarget> extends WorkerEntrypoint
  * it wants to deliver an event. It must not store the callback in its own storage.
  */
 export interface HookInitiator<Hook extends RpcTarget> extends WorkerEntrypoint {
+  /** Describe this existing capability for encrypted native recovery; never grants authority by itself. */
+  getRecoveryDescriptor?(): Promise<{ payload: string; signature: string }>;
+
   /**
    * Indicates that the hook is about to be invoked.
    *

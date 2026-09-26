@@ -1,3 +1,4 @@
+import { CONTEXT_RECOVERY_FREEZE, freezeContextStorage, releaseContextStorage, requireContextWritable, captureContextRows, CONTEXT_RECOVERY_OFFLINE, restoreContextRows, type ContextCollectionRecovery } from "./recovery.js";
 // One collection's metadata and documents. Metadata changes update the private owner library or the
 // public domain registry.
 
@@ -145,6 +146,48 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
     this.searchIndex = new ContextSearchIndex(ctx.storage.sql);
   }
 
+  /** Freeze local mutation while the deployment takes its coherent snapshot. */
+  async beginRecovery(run: string): Promise<void> {
+    if (freezeContextStorage(this.ctx.storage, run)) {
+      await this.ctx.storage.sync();
+      this.ctx.abort("Context recovery fence installed; retry acquisition.");
+    }
+  }
+
+  /** Confirm the deployment still owns this object's capture fence. */
+  validateRecovery(run: string): void {
+    if (this.ctx.storage.kv.get(CONTEXT_RECOVERY_FREEZE) !== run) throw new Error("Context recovery fence was lost.");
+  }
+
+  /** Release only the matching deployment capture fence. */
+  endRecovery(run: string): void { releaseContextStorage(this.ctx.storage, run); }
+
+  /** Capture every local row and both search tables without refreshing external sources. */
+  async exportRecovery(): Promise<ContextCollectionRecovery> {
+    return {
+      version: 1, id: this.getMetadata().id, rows: await captureContextRows(this.ctx.storage),
+      passages: [...this.ctx.storage.sql.exec<ContextCollectionRecovery["passages"][number]>(
+        "SELECT path, offset, title, description, body FROM context_passages")],
+      vectors: [...this.ctx.storage.sql.exec<ContextCollectionRecovery["vectors"][number]>(
+        "SELECT path, offset, vector FROM context_vectors")],
+    };
+  }
+
+  /** Restore an empty collection in an isolated domain, keeping external services disabled. */
+  async restoreRecovery(snapshot: ContextCollectionRecovery, sharingDomain: string): Promise<void> {
+    if (snapshot.version !== 1 || !sharingDomain.startsWith("recovery:")) throw new Error("Invalid Context recovery target.");
+    await restoreContextRows(this.ctx.storage, snapshot.rows, () => {
+      if (this.getMetadata().id !== snapshot.id) throw new Error("Context collection identity mismatch.");
+      this.storage.sharingDomain.put(sharingDomain);
+      this.ctx.storage.kv.put(CONTEXT_RECOVERY_OFFLINE, true);
+      for (const row of snapshot.passages) this.ctx.storage.sql.exec(
+        "INSERT INTO context_passages (path, offset, title, description, body) VALUES (?, ?, ?, ?, ?)",
+        row.path, row.offset, row.title, row.description, row.body);
+      for (const row of snapshot.vectors) this.ctx.storage.sql.exec(
+        "INSERT INTO context_vectors (path, offset, vector) VALUES (?, ?, ?)", row.path, row.offset, row.vector);
+    });
+  }
+
   // Sharing domain for all cross-DO/KV references.
   #domain(): string {
     return this.storage.sharingDomain.get();
@@ -162,6 +205,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   #artifacts(): Artifacts {
+    if (this.ctx.storage.kv.get(CONTEXT_RECOVERY_OFFLINE)) throw new Error("Restored Context collection is offline.");
     let artifacts = this.env.ARTIFACTS;
     if (!artifacts) throw new Error("Git-backed Context collections are not enabled.");
     return artifacts;
@@ -192,6 +236,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
    * Rejects re-initialization so a (vanishingly unlikely) id reuse can't clobber existing content.
    */
   async initialize(metadata: ContextCollectionMetadata, sharingDomain: string, ownerAccountId: string): Promise<ContextCollectionMetadata> {
+    requireContextWritable(this.ctx.storage);
     if (this.getMetadata().id) {
       throw new Error("Collection already exists.");
     }
@@ -250,6 +295,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   // Save a document and update its skill entry together.
   #putDocument(record: ContextRecord, extractedText?: string): void {
+    requireContextWritable(this.ctx.storage);
     this.storage.documents.put({ ...record, revision: crypto.randomUUID() });
     this.#updateSkillIndex(record);
     this.#indexDocument(record, extractedText);
@@ -257,6 +303,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   // Delete a document and its skill entry together.
   #deleteDocument(path: string): void {
+    requireContextWritable(this.ctx.storage);
     this.storage.documents.delete(path);
     this.storage.skillIndex.delete(path);
     this.searchIndex.remove(path);
@@ -271,6 +318,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   #ensureSearchIndex(): void {
+    if (this.ctx.storage.kv.get(CONTEXT_RECOVERY_FREEZE)) return;
     if (this.storage.searchIndexVersion.get() === 2) return;
     this.storage.transaction(() => {
       // Preserve extracted PDF/office text when migrating to smaller embedding-sized passages.
@@ -290,7 +338,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   #semanticWarmup?: Promise<void>;
   #warmSemanticIndex(): void {
-    if (!this.env.AI?.run || this.#semanticWarmup) return;
+    if (this.ctx.storage.kv.get(CONTEXT_RECOVERY_OFFLINE) || this.ctx.storage.kv.get(CONTEXT_RECOVERY_FREEZE) || !this.env.AI?.run || this.#semanticWarmup) return;
     this.#semanticWarmup = this.searchIndex.warm(this.env.AI)
       .catch(() => { logger.warn("semantic indexing deferred", { event: "collection.semantic.index.failed" }); })
       .finally(() => { this.#semanticWarmup = undefined; });
@@ -306,6 +354,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   // Build the index for collections created before it existed.
   #ensureSkillIndex(): void {
+    if (this.ctx.storage.kv.get(CONTEXT_RECOVERY_FREEZE)) return;
     if (this.storage.skillIndexVersion.get() === SKILL_INDEX_VERSION) return;
 
     let entries: SkillIndexEntry[] = [];
@@ -341,6 +390,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
     icon?: string;
     branch?: string;
   }): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     let meta = this.getMetadata();
     let changed = false;
 
@@ -415,6 +465,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   async putContextDocument(
       path: string,
       doc: { description: string; body: string; contentType?: string }): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     this.#assertWebWritable();
     validateDocumentPath(path);
     let contentType = doc.contentType || contentTypeFromPath(path);
@@ -435,6 +486,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
     const revision = previous?.revision ?? previous?.lastUpdated.getTime();
     let extractedText: string | undefined;
     if (isExtractableDocument(contentType)) {
+      if (this.ctx.storage.kv.get(CONTEXT_RECOVERY_OFFLINE)) throw new Error("Restored Context collection is offline.");
       if (!this.env.AI) throw new Error("Document indexing needs the Context Library AI binding.");
       const converted = await this.env.AI.toMarkdown({
         name: record.name,
@@ -467,6 +519,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   async deleteContextDocument(path: string): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     this.#assertWebWritable();
     // Mutations reject invalid paths; reads stay lenient.
     validateDocumentPath(path);
@@ -485,6 +538,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   async moveContextDocument(from: string, to: string): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     this.#assertWebWritable();
     validateDocumentPath(from);
     validateDocumentPath(to);
@@ -548,11 +602,13 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   // --- Artifact-backed projection ---
 
   async syncArtifactSource(): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     if (!this.#isGitBased()) throw new Error("Collection is not git-based.");
     await this.#refreshArtifactSource();
   }
 
   async createGitToken(): Promise<ContextGitTokenCreateResult> {
+    requireContextWritable(this.ctx.storage);
     let meta = this.getMetadata();
     if (meta.content.source !== "git") throw new Error("Collection is not git-based.");
     let repo = await this.#artifacts().get(meta.id);
@@ -583,6 +639,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   async revokeGitToken(tokenId: string): Promise<boolean> {
+    requireContextWritable(this.ctx.storage);
     if (!this.#isGitBased()) throw new Error("Collection is not git-based.");
     let meta = this.getMetadata();
     let repo = await this.#artifacts().get(meta.id);
@@ -594,7 +651,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   #startBackgroundArtifactRefresh(): void {
-    if (!this.env.ARTIFACTS) return;
+    if (this.ctx.storage.kv.get(CONTEXT_RECOVERY_OFFLINE) || this.ctx.storage.kv.get(CONTEXT_RECOVERY_FREEZE) || !this.env.ARTIFACTS) return;
     let content = this.getMetadata().content;
     if (content.source !== "git") return;
     if (Date.now() - content.lastRefreshedAt.getTime() < GIT_REFRESH_MIN_INTERVAL_MS) return;
@@ -619,6 +676,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   #replaceArtifactDocuments(commit: string, documents: ArtifactContextDocument[]): void {
+    requireContextWritable(this.ctx.storage);
     this.storage.transaction(() => {
       this.searchIndex.clear();
       for (let record of this.storage.documents.list()) {
@@ -642,6 +700,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   #deleteArtifactDocuments(commit: string): void {
+    requireContextWritable(this.ctx.storage);
     this.storage.transaction(() => {
       this.searchIndex.clear();
       for (let record of this.storage.documents.list()) {
@@ -712,7 +771,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   async retrieve(query: string, limit = 5) {
     if (this.#isGitBased()) this.#startBackgroundArtifactRefresh();
     this.#ensureSearchIndex();
-    if (this.env.AI?.run) {
+    if (!this.ctx.storage.kv.get(CONTEXT_RECOVERY_OFFLINE) && !this.ctx.storage.kv.get(CONTEXT_RECOVERY_FREEZE) && this.env.AI?.run) {
       try { return await this.searchIndex.retrieveSemantic(query, this.env.AI, limit); }
       catch { logger.warn("semantic retrieval unavailable", { event: "collection.semantic.failed" }); }
       finally { this.#warmSemanticIndex(); }
@@ -723,6 +782,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   // --- Deletion ---
 
   async deleteSelf(): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     let meta = this.getMetadata();
     let id = meta.id;
 
@@ -734,7 +794,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
       }
     }
 
-    if (meta.content.source === "git" && this.env.ARTIFACTS) {
+    if (!this.ctx.storage.kv.get(CONTEXT_RECOVERY_OFFLINE) && meta.content.source === "git" && this.env.ARTIFACTS) {
       await this.env.ARTIFACTS.delete(id).catch((err) => {
         logger.warn("failed to delete Artifacts repo for context collection", {
           event: "artifacts.repo.delete.failed",
@@ -749,8 +809,9 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   /** Account revocation clears the whole user-library index separately; don't update it per item. */
   async deleteForRevokedOwner(): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     let meta = this.getMetadata();
-    if (meta.content.source === "git" && meta.id && this.env.ARTIFACTS) {
+    if (!this.ctx.storage.kv.get(CONTEXT_RECOVERY_OFFLINE) && meta.content.source === "git" && meta.id && this.env.ARTIFACTS) {
       await this.env.ARTIFACTS.delete(meta.id).catch((err) => {
         logger.warn("failed to delete Artifacts repo while revoking context collection owner", {
           event: "artifacts.repo.delete.for.revoked.owner.failed",

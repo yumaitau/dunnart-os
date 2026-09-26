@@ -1,3 +1,7 @@
+import { sealCapabilityDescriptor } from "@gadgets/backend-utils/recovery-capability";
+import type { GatekeeperRecoveryParticipant, GatekeeperRecoveryDescriptor, GatekeeperRecoveryCapability } from "@gadgets/workshop-shared/gatekeeper-recovery";
+import { acquireContextRecovery, contextRecoveryDomain, type ContextAccountRecovery, type ContextDomainRecovery } from "./recovery.js";
+import { publicCollectionsKvKey } from "./collection-kv.js";
 // Context Library gatekeeper. It auto-provisions one account per user; each account provides an
 // unnamed agent capsule (ContextGatekeeper) and a management UI (ContextApi). Data is sharing-domain
 // scoped by binding props.
@@ -130,6 +134,9 @@ type ContextAccountProps = {
 export class ContextAccount
     extends WorkerEntrypoint<Cloudflare.Env, ContextAccountProps>
     implements GatekeeperUser {
+  /** Non-secret immutable scope, consumed only by the trusted recovery codec. */
+  getRecoveryDescriptor() { return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "context-account", props: { ...this.ctx.props } }); }
+
   #collections() { return this.ctx.exports.ContextCollectionDurableObject; }
   #userLibraries() { return this.ctx.exports.UserLibraryDurableObject; }
   #registries() { return this.ctx.exports.LibraryRegistryDurableObject; }
@@ -210,6 +217,9 @@ export class ContextAccount
 export class ContextVerifier
     extends WorkerEntrypoint<Cloudflare.Env, ContextAccountProps>
     implements ContextVerifierApi {
+  /** Non-secret immutable scope, consumed only by the trusted recovery codec. */
+  getRecoveryDescriptor() { return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "context-verifier", props: { ...this.ctx.props } }); }
+
   async hasCollectionAccess(sharingDomain: string, collectionId: string): Promise<boolean> {
     if (sharingDomain !== this.ctx.props.sharingDomain) return false;
     let userLibraries = this.ctx.exports.UserLibraryDurableObject;
@@ -228,6 +238,9 @@ export class ContextVerifier
 export class ContextGatekeeper
     extends DurableObject<Cloudflare.Env, ContextAccountProps>
     implements Gatekeeper<LibraryReadSession> {
+  /** Account and domain props needed to reconstruct this exact ambient class. */
+  getRecoveryClassDescriptor() { return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "context-gatekeeper-class", props: { ...this.ctx.props } }); }
+
   #collections() { return this.ctx.exports.ContextCollectionDurableObject; }
   #userLibraries() { return this.ctx.exports.UserLibraryDurableObject; }
   #observers() {
@@ -375,6 +388,13 @@ type GatekeeperVendorProps = {
 
 @validateRpc()
 export class GatekeeperVendor extends WorkerEntrypoint<Cloudflare.Env, GatekeeperVendorProps> {
+  /** Mint a trusted recovery participant; this capability never reaches account UIs. */
+  @skipRpcValidation()
+  getRecoveryParticipant(): ContextRecoveryParticipant {
+    return new ContextRecoveryParticipant(this.ctx.exports, this.env,
+      this.ctx.props.sharingDomain ?? DEFAULT_SHARING_DOMAIN);
+  }
+
   async describe(): Promise<VendorDescription> {
     return {
       displayName: "Context",
@@ -415,5 +435,124 @@ export class GatekeeperVendor extends WorkerEntrypoint<Cloudflare.Env, Gatekeepe
   }
   async getTypeScriptTypes(): Promise<string> {
     return CONTEXT_LIBRARY_TYPES;
+  }
+}
+
+/** Service-binding-only access to this vendor's local account and domain storage. */
+export class ContextRecoveryParticipant extends NativeRpcTarget implements GatekeeperRecoveryParticipant {
+  #captured = new Map<string, string>();
+
+  constructor(private exports: Cloudflare.Exports, private env: Cloudflare.Env, private domain: string) { super(); }
+
+  /** Freeze account indexes, the public registry, then all referenced collections. */
+  async beginRecovery(accountIds: string[], run: string): Promise<void> {
+    await acquireContextRecovery(() => this.exports.LibraryRegistryDurableObject.getByName(this.domain).beginRecovery(run));
+    const registry = this.exports.LibraryRegistryDurableObject.getByName(this.domain);
+    try {
+      for (const accountId of accountIds) {
+        await acquireContextRecovery(() => this.exports.UserLibraryDurableObject.getByName(domainName(this.domain, accountId)).beginRecovery(run));
+        const library = this.exports.UserLibraryDurableObject.getByName(domainName(this.domain, accountId));
+        for (const record of await library.listOwnedCollections()) await acquireContextRecovery(() => this.exports.ContextCollectionDurableObject
+          .getByName(domainName(this.domain, record.id)).beginRecovery(run));
+      }
+      for (const id of (await registry.exportRecovery()).collectionIds) await acquireContextRecovery(() => this.exports.ContextCollectionDurableObject
+        .getByName(domainName(this.domain, id)).beginRecovery(run));
+    } catch (error) {
+      await this.endRecovery(accountIds, run);
+      throw error;
+    }
+  }
+
+  /** Validate every source fence before the deployment publishes a complete archive. */
+  async validateRecovery(accountIds: string[], run: string): Promise<void> {
+    const registry = this.exports.LibraryRegistryDurableObject.getByName(this.domain);
+    await registry.validateRecovery(run);
+    for (const id of (await registry.exportRecovery()).collectionIds) await this.exports.ContextCollectionDurableObject
+      .getByName(domainName(this.domain, id)).validateRecovery(run);
+    for (const accountId of accountIds) {
+      const library = this.exports.UserLibraryDurableObject.getByName(domainName(this.domain, accountId));
+      await library.validateRecovery(run);
+      for (const record of await library.listOwnedCollections()) await this.exports.ContextCollectionDurableObject
+        .getByName(domainName(this.domain, record.id)).validateRecovery(run);
+    }
+    for (const [key, captured] of [...this.#captured]) {
+      const current = key === "domain" ? await this.exportDomain() : await this.exportAccount(key.slice(8));
+      this.#captured.set(key, captured);
+      if (current !== captured) throw new Error("Connector state changed during recovery capture.");
+    }
+  }
+
+  /** Release collection fences before indexes so propagated writes resume safely. */
+  async endRecovery(accountIds: string[], run: string): Promise<void> {
+    const registry = this.exports.LibraryRegistryDurableObject.getByName(this.domain);
+    for (const id of (await registry.exportRecovery()).collectionIds) await this.exports.ContextCollectionDurableObject
+      .getByName(domainName(this.domain, id)).endRecovery(run);
+    for (const accountId of accountIds) {
+      const library = this.exports.UserLibraryDurableObject.getByName(domainName(this.domain, accountId));
+      for (const record of await library.listOwnedCollections()) await this.exports.ContextCollectionDurableObject
+        .getByName(domainName(this.domain, record.id)).endRecovery(run);
+      await library.endRecovery(run);
+    }
+    await registry.endRecovery(run);
+  }
+
+  /** Export all private collections and the account index. */
+  async exportAccount(accountId: string): Promise<string> {
+    const library = this.exports.UserLibraryDurableObject.getByName(domainName(this.domain, accountId));
+    const owned = await library.listOwnedCollections();
+    const collections: ContextAccountRecovery["collections"] = [];
+    for (const record of owned) collections.push(await this.exports.ContextCollectionDurableObject
+      .getByName(domainName(this.domain, record.id)).exportRecovery());
+    const snapshot = JSON.stringify({ version: 1, accountId, sharingDomain: this.domain, rows: await library.exportRecovery(), collections } satisfies ContextAccountRecovery);
+    this.#captured.set(`account:${accountId}`, snapshot);
+    return snapshot;
+  }
+
+  /** Export authoritative public registry, its KV mirror, and every public collection. */
+  async exportDomain(): Promise<string> {
+    const registry = await this.exports.LibraryRegistryDurableObject.getByName(this.domain).exportRecovery();
+    const collections: ContextAccountRecovery["collections"] = [];
+    for (const id of registry.collectionIds) collections.push(await this.exports.ContextCollectionDurableObject
+      .getByName(domainName(this.domain, id)).exportRecovery());
+    const snapshot = JSON.stringify({ version: 1, sharingDomain: this.domain, rows: registry.rows, collections,
+      publicSnapshot: await this.env.CONTEXT_COLLECTIONS.get(publicCollectionsKvKey(this.domain)) } satisfies ContextDomainRecovery);
+    this.#captured.set("domain", snapshot);
+    return snapshot;
+  }
+
+  /** Restore a private account under a distinct sharing domain; never touch live storage. */
+  async restoreAccount(encoded: string, scope: string): Promise<Fetcher<GatekeeperUser>> {
+    const snapshot: ContextAccountRecovery = JSON.parse(encoded);
+    if (snapshot.version !== 1 || snapshot.sharingDomain !== this.domain || !snapshot.accountId || snapshot.accountId.includes("\0")) {
+      throw new Error("Context recovery account scope mismatch.");
+    }
+    const sharingDomain = contextRecoveryDomain(scope, this.domain);
+    for (const collection of snapshot.collections) await this.exports.ContextCollectionDurableObject
+      .getByName(domainName(sharingDomain, collection.id)).restoreRecovery(collection, sharingDomain);
+    await this.exports.UserLibraryDurableObject.getByName(domainName(sharingDomain, snapshot.accountId)).restoreRecovery(snapshot.rows);
+    return this.exports.ContextAccount({ props: { sharingDomain, accountId: snapshot.accountId } }) as Fetcher<GatekeeperUser>;
+  }
+
+  /** Restore the public registry and its mirror only within the isolated sharing domain. */
+  async restoreDomain(encoded: string, scope: string): Promise<void> {
+    const snapshot: ContextDomainRecovery = JSON.parse(encoded);
+    if (snapshot.version !== 1 || snapshot.sharingDomain !== this.domain) throw new Error("Context recovery domain mismatch.");
+    const sharingDomain = contextRecoveryDomain(scope, this.domain);
+    for (const collection of snapshot.collections) await this.exports.ContextCollectionDurableObject
+      .getByName(domainName(sharingDomain, collection.id)).restoreRecovery(collection, sharingDomain);
+    await this.exports.LibraryRegistryDurableObject.getByName(sharingDomain).restoreRecovery(snapshot.rows);
+    if (snapshot.publicSnapshot !== null) await this.env.CONTEXT_COLLECTIONS.put(publicCollectionsKvKey(sharingDomain), snapshot.publicSnapshot);
+  }
+
+  /** Rebind a known connector capability to the isolated domain. */
+  async restoreCapability(descriptor: GatekeeperRecoveryDescriptor, scope: string): Promise<GatekeeperRecoveryCapability> {
+    if (descriptor.props.sharingDomain !== this.domain || typeof descriptor.props.accountId !== "string" || !descriptor.props.accountId || descriptor.props.accountId.includes("\0")) {
+      throw new Error("Context recovery capability scope mismatch.");
+    }
+    const props = { accountId: descriptor.props.accountId, sharingDomain: contextRecoveryDomain(scope, this.domain) };
+    if (descriptor.kind === "context-account") return this.exports.ContextAccount({ props }) as Fetcher<GatekeeperUser>;
+    if (descriptor.kind === "context-verifier") return this.exports.ContextVerifier({ props });
+    if (descriptor.kind === "context-gatekeeper-class") return this.exports.ContextGatekeeper({ props });
+    throw new Error("Unsupported Context recovery capability.");
   }
 }

@@ -2,6 +2,8 @@
 
 declare namespace Cloudflare {
   interface Env {
+    /** Trusted native capability provenance key; no private archive recovery material. */
+    BACKUP_CAPABILITY_KEY?: string;
     // Public-collections snapshot KV.
     CONTEXT_COLLECTIONS: KVNamespace;
     // Optional Git-compatible backing repos for artifact-backed context collections.

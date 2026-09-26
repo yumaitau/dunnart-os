@@ -11,6 +11,7 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-09-04",
         compatibilityFlags: ["allow_irrevocable_stub_storage", "nodejs_als"],
+        bindings: { BACKUP_CAPABILITY_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" },
         durableObjects: {
           SCHEDULE_DRIVER: { className: "ScheduleDriver", useSQLite: true },
           SCHEDULER_SCOPE_TEST_PARENT: {

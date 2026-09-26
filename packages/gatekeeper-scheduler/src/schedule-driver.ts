@@ -1,3 +1,6 @@
+import { verifyCapabilityDescriptor } from "@gadgets/backend-utils/recovery-capability";
+import { encodePortableValue, decodePortableValue } from "@gadgets/backend-utils/recovery-value";
+import { parseScheduleHookDescriptor, SCHEDULE_RECOVERY_FREEZE, SCHEDULE_RECOVERY_DISABLED, type ScheduleAccountRecovery, type ScheduleRecoveryResolver, type ScheduleHookRecoveryDescriptor } from "./recovery.js";
 import { DurableObject } from "cloudflare:workers";
 import type { RpcStub, RpcTarget } from "cloudflare:workers";
 import { reportIssue } from "@gadgets/backend-utils/error-reporting";
@@ -40,12 +43,12 @@ const CAPABILITIES_PREFIX = "caps:";
 type ScheduleHookTarget = RpcTarget & ScheduledTaskHook;
 type ScheduleInitiator = Fetcher<HookInitiator<ScheduleHookTarget>>;
 
-type DriverMetadata = {
+export type DriverMetadata = {
   schemaVersion: 1;
   revoked: boolean;
 };
 
-type StoredCapabilities = {
+export type StoredCapabilities = {
   initiator: ScheduleInitiator;
 };
 
@@ -79,7 +82,88 @@ type PreparedRun = {
 type PendingState = Extract<EnabledSchedule, { status: "pending" }>;
 type PendingStage = PendingState["stage"];
 
-export class ScheduleDriver extends DurableObject {
+export class ScheduleDriver extends DurableObject<Cloudflare.Env> {
+  /** Fence scheduler mutation throughout a deployment capture. */
+  async beginRecovery(run: string): Promise<void> {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(run)) throw new Error("Invalid recovery run.");
+    const owner = this.ctx.storage.kv.get<string>(SCHEDULE_RECOVERY_FREEZE);
+    if (owner && owner !== run) throw new Error("Scheduler recovery already in progress.");
+    if (owner === run) return;
+    this.ctx.storage.kv.put(".recoveryAlarm", await this.ctx.storage.getAlarm());
+    this.ctx.storage.kv.put(SCHEDULE_RECOVERY_FREEZE, run);
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.sync();
+    this.ctx.abort("Scheduler recovery fence installed; retry acquisition.");
+  }
+
+  /** Confirm capture still owns the driver's persistent fence. */
+  validateRecovery(run: string): void {
+    if (this.ctx.storage.kv.get(SCHEDULE_RECOVERY_FREEZE) !== run) throw new Error("Scheduler recovery fence was lost.");
+  }
+
+  /** Release only this capture's fence, then resume the original schedule plan. */
+  async endRecovery(run: string): Promise<void> {
+    if (this.ctx.storage.kv.get(SCHEDULE_RECOVERY_FREEZE) !== run) return;
+    this.ctx.storage.kv.delete(SCHEDULE_RECOVERY_FREEZE);
+    this.ctx.storage.kv.delete(".recoveryAlarm");
+    if (!this.ctx.storage.kv.get(SCHEDULE_RECOVERY_DISABLED)) await this.#planAlarm();
+  }
+
+  /** Export every local row; native initiators become verified hook identities, never JSON stubs. */
+  async exportRecovery(): Promise<Omit<ScheduleAccountRecovery, "accountId">> {
+    const result = await this.ctx.blockConcurrencyWhile(async () => {
+      try {
+        const rows = [...this.ctx.storage.kv.list()].filter(([key]) => key !== SCHEDULE_RECOVERY_FREEZE && key !== ".recoveryAlarm");
+        const identities = new Map<object, ScheduleHookRecoveryDescriptor>();
+        for (const [key, value] of rows) {
+          if (!key.startsWith(CAPABILITIES_PREFIX)) continue;
+          const caps = this.ctx.storage.kv.get<StoredCapabilities>(key);
+          if (!caps || typeof caps.initiator.getRecoveryDescriptor !== "function") throw new Error("Schedule initiator has no recovery descriptor.");
+          const descriptor = parseScheduleHookDescriptor(await verifyCapabilityDescriptor(
+            this.env.BACKUP_CAPABILITY_KEY, await caps.initiator.getRecoveryDescriptor()));
+          // Use the exact capability instance contained in the row captured above.
+          if (!value || typeof value !== "object" || !("initiator" in value) || !value.initiator || typeof value.initiator !== "object") {
+            throw new Error("Invalid scheduler capability row.");
+          }
+          identities.set(value.initiator, descriptor);
+        }
+        const encoded = await encodePortableValue(rows, {
+          describe: value => identities.get(value),
+          restore: () => { throw new Error("Capture cannot restore capabilities."); },
+        });
+        return { snapshot: { version: 1 as const, rows: JSON.stringify(encoded), alarm: this.ctx.storage.kv.get<number | null>(".recoveryAlarm") ?? await this.ctx.storage.getAlarm() } };
+      } catch (error) { return { error }; }
+    });
+    if ("error" in result) throw result.error;
+    return result.snapshot;
+  }
+
+  /** Restore only into an empty driver; persisted quarantine prevents delivery after restart. */
+  async restoreRecovery(snapshot: Omit<ScheduleAccountRecovery, "accountId">, resolver?: RpcStub<ScheduleRecoveryResolver>): Promise<void> {
+    if (snapshot.version !== 1) throw new Error("Invalid Scheduler recovery snapshot.");
+    const rows = await decodePortableValue(JSON.parse(snapshot.rows), {
+      describe: () => undefined,
+      restore: descriptor => {
+        if (!resolver) throw new Error("Missing Scheduler recovery resolver.");
+        return resolver.restoreHook(parseScheduleHookDescriptor(descriptor));
+      },
+    });
+    if (!Array.isArray(rows) || rows.some(row => !Array.isArray(row) || row.length !== 2 || typeof row[0] !== "string") ||
+        new Set(rows.map(row => row[0])).size !== rows.length) throw new Error("Invalid Scheduler recovery rows.");
+    const outcome = await this.ctx.blockConcurrencyWhile(async () => {
+      try {
+        if ([...this.ctx.storage.kv.list({ limit: 1 })].length) throw new Error("Scheduler recovery target is not empty.");
+        this.ctx.storage.transactionSync(() => {
+          for (const [key, value] of rows) this.ctx.storage.kv.put(key, value);
+          this.ctx.storage.kv.put(SCHEDULE_RECOVERY_DISABLED, true);
+        });
+        await this.ctx.storage.deleteAlarm();
+        return { ok: true };
+      } catch (error) { return { error }; }
+    });
+    if ("error" in outcome) throw outcome.error;
+  }
+
   async enable(
     activation: ScheduleActivation,
     initiator: ScheduleInitiator,
@@ -159,6 +243,7 @@ export class ScheduleDriver extends DurableObject {
   }
 
   async #disable(workspaceId: string, scheduleId: string): Promise<void> {
+    this.#requireRecoveryWritable();
     let capabilities: StoredCapabilities | undefined;
     let revoked = false;
     try {
@@ -211,9 +296,11 @@ export class ScheduleDriver extends DurableObject {
   }
 
   async revoke(): Promise<void> {
+    this.#requireRecoveryWritable();
+    if (this.ctx.storage.kv.get(SCHEDULE_RECOVERY_DISABLED)) throw new Error("Restored schedules are disabled.");
     await obsContext.with({ accountId: this.ctx.id.toString(), operation: "revoke" }, async () => {
       try {
-        await this.ctx.storage.setAlarm(Date.now());
+          await this.ctx.storage.setAlarm(Date.now());
         this.ctx.storage.transactionSync(() => {
           const metadata = this.#requireMetadata();
           if (metadata.revoked) return;
@@ -235,10 +322,11 @@ export class ScheduleDriver extends DurableObject {
   }
 
   async alarm(): Promise<void> {
+    if (this.ctx.storage.kv.get(SCHEDULE_RECOVERY_FREEZE) || this.ctx.storage.kv.get(SCHEDULE_RECOVERY_DISABLED)) { await this.ctx.storage.deleteAlarm(); return; }
     await obsContext.with({ accountId: this.ctx.id.toString(), operation: "alarm" }, async () => {
       const startedAt = Date.now();
       try {
-        const { dueCount, batchSize, backlogCount, startHookRejectedCount } =
+          const { dueCount, batchSize, backlogCount, startHookRejectedCount } =
           await this.#runAlarm();
         logger.debug("scheduler alarm batch completed", {
           event: "scheduler.alarm.completed",
@@ -351,6 +439,7 @@ export class ScheduleDriver extends DurableObject {
     stage: PendingStage | undefined,
     transition: (state: PendingState) => EnabledSchedule,
   ): void {
+    this.#requireRecoveryWritable();
     let orphaned: StoredCapabilities | undefined;
     this.ctx.storage.transactionSync(() => {
       if (this.#requireMetadata().revoked) return;
@@ -378,7 +467,7 @@ export class ScheduleDriver extends DurableObject {
     if (!prepared) return false;
     return obsContext.with({ runId: prepared.runId }, async () => {
       try {
-        return await this.#deliverPrepared(prepared);
+          return await this.#deliverPrepared(prepared);
       } catch (error) {
         this.#reportDeliveryFailure(error);
         return false;
@@ -409,7 +498,7 @@ export class ScheduleDriver extends DurableObject {
       // @ts-expect-error Worker RPC promises are disposable even though the mapped type omits it.
       using hookCall = capabilities.initiator.startHook();
       try {
-        // Await admission rather than pipeline: its rejection must skip this occurrence before the
+          // Await admission rather than pipeline: its rejection must skip this occurrence before the
         // callback attempt is counted or either returned capability is used.
         // @ts-expect-error Worker RPC's mapped return type wraps the already-stubbed hook result.
         hookResult = await hookCall;
@@ -429,7 +518,7 @@ export class ScheduleDriver extends DurableObject {
         timeZone: timeZoneOf(admitted.state),
       };
       try {
-        await hookResult.approvalQueue.authorizeObservation({
+          await hookResult.approvalQueue.authorizeObservation({
           title: `Run scheduled task: ${admitted.title}`,
           description: `Deliver scheduled task ${prepared.scheduleId} for its planned occurrence at ${prepared.scheduledTime}.`,
         });
@@ -440,7 +529,7 @@ export class ScheduleDriver extends DurableObject {
 
       if (!this.#isPendingDelivery(prepared)) return false;
       try {
-        await hookResult.callback.onSchedule(firing);
+          await hookResult.callback.onSchedule(firing);
       } catch {
         this.#failPending(prepared, "callback_failed", Date.now());
         return false;
@@ -456,7 +545,7 @@ export class ScheduleDriver extends DurableObject {
     const { workspaceId, scheduleId } = schedule.state;
     return obsContext.with({ workspaceId, scheduleId }, async () => {
       try {
-        return await this.#deliver(key);
+          return await this.#deliver(key);
       } catch (error) {
         this.#reportDeliveryFailure(error);
         return false;
@@ -594,6 +683,10 @@ export class ScheduleDriver extends DurableObject {
     return schedules;
   }
 
+  #requireRecoveryWritable(): void {
+    if (this.ctx.storage.kv.get(SCHEDULE_RECOVERY_FREEZE)) throw new Error("Scheduler backup capture in progress; retry the change.");
+  }
+
   #requireMetadata(): DriverMetadata {
     const metadata = this.ctx.storage.kv.get<DriverMetadata>(METADATA_KEY);
     if (metadata === undefined) return { schemaVersion: 1, revoked: false };
@@ -604,6 +697,8 @@ export class ScheduleDriver extends DurableObject {
   }
 
   #requireLiveMetadata(initialize = false): DriverMetadata {
+    this.#requireRecoveryWritable();
+    if (this.ctx.storage.kv.get(SCHEDULE_RECOVERY_DISABLED)) throw new Error("Restored schedules are disabled.");
     const metadata = this.#requireMetadata();
     if (metadata.revoked) throw new Error("Scheduler account is permanently revoked.");
     if (initialize && this.ctx.storage.kv.get(METADATA_KEY) === undefined) {

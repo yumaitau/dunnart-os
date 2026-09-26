@@ -1,3 +1,6 @@
+import { sealCapabilityDescriptor } from "@gadgets/backend-utils/recovery-capability";
+import type { GatekeeperRecoveryParticipant, GatekeeperRecoveryDescriptor, GatekeeperRecoveryCapability } from "@gadgets/workshop-shared/gatekeeper-recovery";
+import { scheduleRecoveryAccount, type ScheduleAccountRecovery, type ScheduleRecoveryResolver } from "./recovery.js";
 import {
   DurableObject,
   RpcStub as NativeRpcStub,
@@ -208,6 +211,9 @@ export class ScheduleHookController
   extends WorkerEntrypoint<Cloudflare.Env, ScheduleControllerProps>
   implements HookController<ScheduleHookTarget>
 {
+  /** Non-secret immutable scope used by the trusted recovery codec. */
+  getRecoveryDescriptor() { return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "schedule-controller", props: { ...this.ctx.props } }); }
+
   /** Activates the schedule, recording the gadget it delivers into. */
   enable(initiator: ScheduleInitiator, target: HookTargetMetadata): Promise<void> {
     return enableScheduleController(this.ctx.props, initiator, this.#driver(), target);
@@ -228,6 +234,9 @@ export class SchedulerGatekeeper
   extends DurableObject<Cloudflare.Env, { accountId: string }>
   implements Gatekeeper<ScheduleSession>
 {
+  /** Account props needed to reconstruct this exact ambient class. */
+  getRecoveryClassDescriptor() { return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "schedule-gatekeeper-class", props: { ...this.ctx.props } }); }
+
   /** Describes the ambient Scheduled Tasks binding. */
   async describe(): Promise<ResourceDescription> {
     return {
@@ -325,6 +334,9 @@ export class ScheduleAccount
   extends WorkerEntrypoint<Cloudflare.Env, ScheduleAccountProps>
   implements GatekeeperUser
 {
+  /** Non-secret immutable scope used by the trusted recovery codec. */
+  getRecoveryDescriptor() { return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "schedule-account", props: { ...this.ctx.props } }); }
+
   /** Describes the auto-provisioned Scheduler account capabilities. */
   async describe(): Promise<AccountDescription> {
     return describeScheduleAccount();
@@ -397,11 +409,20 @@ export class ScheduleVerifier
   extends WorkerEntrypoint<Cloudflare.Env>
   implements GatekeeperUserVerifier
 {
+  /** Non-secret immutable scope used by the trusted recovery codec. */
+  getRecoveryDescriptor() { return sealCapabilityDescriptor(this.env.BACKUP_CAPABILITY_KEY, { kind: "schedule-verifier", props: {} }); }
+
   verify(): void {}
 }
 
 @validateRpc()
 export class GatekeeperVendor extends WorkerEntrypoint<Cloudflare.Env> {
+  /** Mint trusted recovery authority, never exposed through the account or management UI. */
+  @skipRpcValidation()
+  getRecoveryParticipant(): ScheduleRecoveryParticipant {
+    return new ScheduleRecoveryParticipant(this.ctx.exports);
+  }
+
   /** Describes the auto-provisioned Scheduled Tasks vendor. */
   async describe(): Promise<VendorDescription> {
     return {
@@ -439,5 +460,79 @@ export class GatekeeperVendor extends WorkerEntrypoint<Cloudflare.Env> {
   /** Returns the complete agent-facing Scheduler declarations. */
   async getTypeScriptTypes(): Promise<string> {
     return TYPES_CODE;
+  }
+}
+
+/** Trusted service-binding participant for all account-scoped scheduler storage. */
+export class ScheduleRecoveryParticipant extends RpcTarget implements GatekeeperRecoveryParticipant {
+  #captured = new Map<string, string>();
+
+  constructor(private exports: Cloudflare.Exports) { super(); }
+
+  /** Fence each driver before the deployment capture begins. */
+  async beginRecovery(accountIds: string[], run: string): Promise<void> {
+    try {
+      for (const accountId of accountIds) {
+        try { await this.exports.ScheduleDriver.getByName(accountId).beginRecovery(run); }
+        catch { await this.exports.ScheduleDriver.getByName(accountId).beginRecovery(run); }
+      }
+    }
+    catch (error) { await this.endRecovery(accountIds, run); throw error; }
+  }
+
+  /** Confirm all account drivers remain frozen for this run. */
+  async validateRecovery(accountIds: string[], run: string): Promise<void> {
+    for (const accountId of accountIds) await this.exports.ScheduleDriver.getByName(accountId).validateRecovery(run);
+    for (const [key, captured] of [...this.#captured]) {
+      const current = key === "domain" ? await this.exportDomain() : await this.exportAccount(key.slice(8));
+      this.#captured.set(key, captured);
+      if (current !== captured) throw new Error("Connector state changed during recovery capture.");
+    }
+  }
+
+  /** Resume only drivers fenced by this deployment capture. */
+  async endRecovery(accountIds: string[], run: string): Promise<void> {
+    for (const accountId of accountIds) await this.exports.ScheduleDriver.getByName(accountId).endRecovery(run);
+  }
+
+  /** Capture the account driver, including callbacks and pending-run state. */
+  async exportAccount(accountId: string): Promise<string> {
+    const snapshot = JSON.stringify({ accountId, ...await this.exports.ScheduleDriver.getByName(accountId).exportRecovery() });
+    this.#captured.set(`account:${accountId}`, snapshot);
+    return snapshot;
+  }
+
+  /** Scheduler has no domain-wide persistent state. */
+  async exportDomain(): Promise<string> { return JSON.stringify({ version: 1 }); }
+
+  /** Restore callbacks and schedule records into an inert, isolated account driver. */
+  async restoreAccount(encoded: string, scope: string, resolver?: NativeRpcStub<ScheduleRecoveryResolver>): Promise<Fetcher<GatekeeperUser>> {
+    const snapshot: ScheduleAccountRecovery = JSON.parse(encoded);
+    const accountId = scheduleRecoveryAccount(scope, snapshot.accountId);
+    await this.exports.ScheduleDriver.getByName(accountId).restoreRecovery(snapshot, resolver);
+    return this.exports.ScheduleAccount({ props: { accountId } }) as Fetcher<GatekeeperUser>;
+  }
+
+  /** Validate the explicit empty domain component without creating any live resources. */
+  async restoreDomain(encoded: string, scope: string): Promise<void> {
+    const snapshot: { version: number } = JSON.parse(encoded);
+    scheduleRecoveryAccount(scope, "domain");
+    if (snapshot.version !== 1) throw new Error("Invalid Scheduler domain snapshot.");
+  }
+
+  /** Recreate an account, verifier or immutable hook controller in the isolated scope. */
+  async restoreCapability(descriptor: GatekeeperRecoveryDescriptor, scope: string): Promise<GatekeeperRecoveryCapability> {
+    if (descriptor.kind === "schedule-verifier") {
+      scheduleRecoveryAccount(scope, "verifier");
+      return this.exports.ScheduleVerifier({});
+    }
+    if (!("accountId" in descriptor.props) || typeof descriptor.props.accountId !== "string") throw new Error("Invalid Scheduler capability descriptor.");
+    const accountId = scheduleRecoveryAccount(scope, descriptor.props.accountId);
+    if (descriptor.kind === "schedule-account") return this.exports.ScheduleAccount({ props: { accountId } }) as Fetcher<GatekeeperUser>;
+    if (descriptor.kind === "schedule-gatekeeper-class") return this.exports.SchedulerGatekeeper({ props: { accountId } });
+    if (descriptor.kind === "schedule-controller" && "workspaceId" in descriptor.props && "scheduleId" in descriptor.props && "spec" in descriptor.props && "title" in descriptor.props && "description" in descriptor.props) {
+      return this.exports.ScheduleHookController({ props: { ...descriptor.props, accountId } as ScheduleControllerProps });
+    }
+    throw new Error("Unsupported Scheduler recovery capability.");
   }
 }

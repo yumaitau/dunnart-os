@@ -7,6 +7,8 @@ import {
 } from "./context-types.js";
 import { listPublicCollectionsFromKv } from "./collection-kv.js";
 
+import { freezeContextStorage, releaseContextStorage, requireContextWritable, captureContextRows, restoreContextRows, type ContextRecoveryRows } from "./recovery.js";
+
 type OwnedRecord = {
   id: string;
   title: string;
@@ -32,14 +34,42 @@ export class UserLibraryDurableObject extends DurableObject<Cloudflare.Env> {
     this.storage = makeUserLibraryStorage(ctx.storage);
   }
 
+  /** Freeze local mutation while the deployment takes its coherent snapshot. */
+  async beginRecovery(run: string): Promise<void> {
+    if (freezeContextStorage(this.ctx.storage, run)) {
+      await this.ctx.storage.sync();
+      this.ctx.abort("Context recovery fence installed; retry acquisition.");
+    }
+  }
+
+  /** Confirm the deployment still owns this object's capture fence. */
+  validateRecovery(run: string): void {
+    if (this.ctx.storage.kv.get(".recoveryFreeze") !== run) throw new Error("Context recovery fence was lost.");
+  }
+
+  /** Release only the matching deployment capture fence. */
+  endRecovery(run: string): void { releaseContextStorage(this.ctx.storage, run); }
+
+  /** Capture the complete account index for the trusted deployment archive. */
+  exportRecovery(): Promise<ContextRecoveryRows> {
+    return captureContextRows(this.ctx.storage);
+  }
+
+  /** Restore an empty, separately named account index. */
+  restoreRecovery(rows: ContextRecoveryRows): Promise<void> {
+    return restoreContextRows(this.ctx.storage, rows);
+  }
+
   // --- Private collections (the user's own) ---
 
   createOwnedCollection(id: string, title: string, description: string, icon?: string): void {
+    requireContextWritable(this.ctx.storage);
     this.storage.ownedCollections.put({ id, title, description, icon, lastUpdated: new Date() });
   }
 
   /** Refresh the denormalized owned record. */
   updateOwnedCollection(id: string, summary: ContextCollectionSummary): void {
+    requireContextWritable(this.ctx.storage);
     let record = this.storage.ownedCollections.get(id);
     if (record) {
       record.title = summary.title;
@@ -51,11 +81,13 @@ export class UserLibraryDurableObject extends DurableObject<Cloudflare.Env> {
   }
 
   removeOwnedCollection(id: string): void {
+    requireContextWritable(this.ctx.storage);
     this.storage.ownedCollections.delete(id);
   }
 
   /** Wipe this library after the caller deletes owned collection content. */
   async deleteAll(): Promise<void> {
+    requireContextWritable(this.ctx.storage);
     await this.ctx.storage.deleteAll();
   }
 
