@@ -19,6 +19,10 @@
     "./error-reporting": {
       "types": "./src/error-reporting.ts",
       "import": "./src/error-reporting.ts"
+    },
+    "./semantic": {
+      "types": "./src/semantic.ts",
+      "import": "./src/semantic.ts"
     }
   },
   "scripts": {

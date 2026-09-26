@@ -208,7 +208,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
     this.storage.metadata.put(metadata);
     // A new collection starts with an up-to-date empty path list.
     this.storage.skillIndexVersion.put(SKILL_INDEX_VERSION);
-    this.storage.searchIndexVersion.put(1);
+    this.storage.searchIndexVersion.put(2);
     return metadata;
   }
 
@@ -271,11 +271,14 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   }
 
   #ensureSearchIndex(): void {
-    if (this.storage.searchIndexVersion.get() === 1) return;
+    if (this.storage.searchIndexVersion.get() === 2) return;
     this.storage.transaction(() => {
+      // Preserve extracted PDF/office text when migrating to smaller embedding-sized passages.
+      const extracted = new Map([...this.storage.documents.list()].map(record =>
+        [record.path, this.searchIndex.read(record.path) ?? undefined]));
       this.searchIndex.clear();
-      for (const record of this.storage.documents.list()) this.#indexDocument(record);
-      this.storage.searchIndexVersion.put(1);
+      for (const record of this.storage.documents.list()) this.#indexDocument(record, extracted.get(record.path));
+      this.storage.searchIndexVersion.put(2);
     });
   }
 
@@ -283,6 +286,15 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   getIndexedText(path: string): string | null {
     this.#ensureSearchIndex();
     return this.searchIndex.read(path);
+  }
+
+  #semanticWarmup?: Promise<void>;
+  #warmSemanticIndex(): void {
+    if (!this.env.AI?.run || this.#semanticWarmup) return;
+    this.#semanticWarmup = this.searchIndex.warm(this.env.AI)
+      .catch(() => { logger.warn("semantic indexing deferred", { event: "collection.semantic.index.failed" }); })
+      .finally(() => { this.#semanticWarmup = undefined; });
+    this.ctx.waitUntil(this.#semanticWarmup);
   }
 
   #clearSkillIndex(): void {
@@ -451,6 +463,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
       this.storage.metadata.put(meta);
     });
     await this.#propagate();
+    this.#warmSemanticIndex();
   }
 
   async deleteContextDocument(path: string): Promise<void> {
@@ -624,7 +637,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
       meta.content.lastRefreshedAt = new Date();
       this.storage.metadata.put(meta);
       this.storage.skillIndexVersion.put(SKILL_INDEX_VERSION);
-      this.storage.searchIndexVersion.put(1);
+      this.storage.searchIndexVersion.put(2);
     });
   }
 
@@ -644,7 +657,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
       meta.content.lastRefreshedAt = new Date();
       this.storage.metadata.put(meta);
       this.storage.skillIndexVersion.put(SKILL_INDEX_VERSION);
-      this.storage.searchIndexVersion.put(1);
+      this.storage.searchIndexVersion.put(2);
     });
   }
 
@@ -699,6 +712,11 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
   async retrieve(query: string, limit = 5) {
     if (this.#isGitBased()) this.#startBackgroundArtifactRefresh();
     this.#ensureSearchIndex();
+    if (this.env.AI?.run) {
+      try { return await this.searchIndex.retrieveSemantic(query, this.env.AI, limit); }
+      catch { logger.warn("semantic retrieval unavailable", { event: "collection.semantic.failed" }); }
+      finally { this.#warmSemanticIndex(); }
+    }
     return this.searchIndex.retrieve(query, limit);
   }
 

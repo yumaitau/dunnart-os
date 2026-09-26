@@ -1,5 +1,5 @@
 import { env, runInDurableObject } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ContextSearchIndex, searchChunks } from "../src/context-search.js";
 import { ContextCollectionDurableObject } from "../src/context-collection.js";
 import { RpcStub, RpcTarget } from "cloudflare:workers";
@@ -15,6 +15,35 @@ function inCollection<T>(fn: (collection: ContextCollectionDurableObject, state:
 }
 
 describe("knowledge base index", () => {
+  it("finds a paraphrase without keyword overlap and reuses embeddings", () => inCollection(async (_, state) => {
+    const index = new ContextSearchIndex(state.storage.sql);
+    index.replace("travel.md", "Travel", "", "Taxi fares may be reimbursed.");
+    const run = vi.fn(async (_model: string, input: { text: string[] }) => ({
+      data: input.text.map(() => Array.from({ length: 768 }, (_, i) => i === 0 ? 1 : 0)),
+    }));
+    const ai = { run } as Ai;
+    expect(index.retrieve("Can I expense a cab?")).toEqual([]);
+    expect((await index.retrieveSemantic("Can I expense a cab?", ai))[0].path).toBe("travel.md");
+    const calls = run.mock.calls.length;
+    expect((await index.retrieveSemantic("Can I expense a cab?", ai))[0].body).toContain("reimbursed");
+    expect(run).toHaveBeenCalledTimes(calls);
+    index.remove("travel.md");
+    expect(await index.retrieveSemantic("Can I expense a cab?", ai)).toEqual([]);
+  }));
+
+  it("discards stale embeddings when a document changes during indexing", () => inCollection(async (_, state) => {
+    const index = new ContextSearchIndex(state.storage.sql);
+    index.replace("policy.md", "Policy", "", "Old policy");
+    let release!: (value: { data: number[][] }) => void;
+    const ai = { run: () => new Promise(resolve => { release = resolve; }) } as Ai;
+    const pending = index.indexPending(ai);
+    index.replace("policy.md", "Policy", "", "New policy");
+    release({ data: [Array.from({ length: 768 }, (_, i) => i === 0 ? 1 : 0)] });
+    await pending;
+    expect(state.storage.sql.exec("SELECT * FROM context_vectors").toArray()).toEqual([]);
+    expect(index.read("policy.md")).toBe("New policy");
+  }));
+
   it("retrieves passages and reconstructs text across chunk boundaries without loss", () => inCollection(async (_, state) => {
     const index = new ContextSearchIndex(state.storage.sql);
     const body = "A document paragraph with Unicode 日本語. ".repeat(250) + "x".repeat(2999) + "🦘".repeat(1700) + "The permit expires in December.";
