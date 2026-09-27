@@ -297,3 +297,7 @@ drill with observed application behavior.
 Profile → Date and time saves an IANA timezone to the account; new accounts default to `Australia/Sydney`. Product timestamps, calendar today markers, and agent scheduling context use this setting. Date-only planner entries remain calendar dates.
 
 Backup schedules have their own timezone selector, defaulting to Sydney for new schedules. Hours and weekdays refer to that timezone and follow daylight saving. A skipped hour runs after the clock change; a repeated hour runs once, at its first occurrence. Existing UTC schedules migrate to explicit `UTC` without changing their timing. Changing an account timezone does not move existing backup or connector schedules.
+
+## Private chat channels
+
+The `ChatChannels` root is included in deployment archives: account links, encrypted Slack installation tokens, inbox/outbox records and pairing state. Isolated restored channel runtimes keep provider setup and dispatch paused. See [chat channel setup](./chat-channels.md) for deployment secrets and provider installation.
