@@ -18,7 +18,8 @@ vi.mock('@cloudflare/kumo', async (importOriginal) => ({
 }))
 
 vi.mock('./AuthContext', () => ({
-  useAuthenticatedApi: () => ({ authenticatedApi: testState.authenticatedApi }),
+  useTimeZone: () => 'Australia/Sydney',
+    useAuthenticatedApi: () => ({ authenticatedApi: testState.authenticatedApi }),
 }))
 
 vi.mock('./ResourceConfiguratorHost', async () => {

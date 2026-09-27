@@ -10,7 +10,7 @@ import type { BackupsApi, BackupStatus } from './backupTypes'
 
 const initialStatus = (): BackupStatus => ({
   configured: true,
-  schedule: { enabled: false, frequency: 'daily', hourUtc: 2, weekdayUtc: 0, retention: 7 },
+  schedule: { enabled: false, frequency: 'daily', timeZone: 'Australia/Sydney', hour: 2, weekday: 0, retention: 7 },
   nextRunAt: null, running: false, recoveryKeyId: 'recovery-key-1',
   coverage: [{ id: 'users', title: 'User workspaces', ready: true }],
   runs: [{ id: 'backup-1', startedAt: 1_790_000_000_000, finishedAt: 1_790_000_002_000,
@@ -83,7 +83,7 @@ describe('BackupsPanel', () => {
     expect(admin.startBackup).not.toHaveBeenCalled()
   })
 
-  it('saves weekly UTC schedule and retention from the form', async () => {
+  it('saves weekly local schedule and retention from the form', async () => {
     await render()
     await select('Daily', 'Weekly')
     await select('Sunday', 'Wednesday')
@@ -91,8 +91,23 @@ describe('BackupsPanel', () => {
     await change('Hour', '18')
     await change('Backups to retain', '12')
     await click('Save schedule')
-    expect(admin.setBackupSchedule).toHaveBeenCalledExactlyOnceWith({ enabled: true, frequency: 'weekly', hourUtc: 18, weekdayUtc: 3, retention: 12 })
+    expect(admin.setBackupSchedule).toHaveBeenCalledExactlyOnceWith({ enabled: true, frequency: 'weekly', timeZone: 'Australia/Sydney', hour: 18, weekday: 3, retention: 12 })
     expect(container.textContent).toContain('Backup schedule saved.')
+  })
+
+  it('saves the selected IANA timezone without shifting the entered local hour', async () => {
+    await render()
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>('input[role="combobox"]')!
+      input.focus()
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    await act(async () => {
+      const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(element => element.textContent === 'Pacific/Auckland')!
+      item.click()
+    })
+    await click('Save schedule')
+    expect(admin.setBackupSchedule).toHaveBeenCalledExactlyOnceWith({ ...initialStatus().schedule, timeZone: 'Pacific/Auckland' })
   })
 
   it('retains edits when a background status refresh has the same saved schedule', async () => {
@@ -100,7 +115,7 @@ describe('BackupsPanel', () => {
     await change('Hour', '18')
     await click('Refresh status')
     await click('Save schedule')
-    expect(admin.setBackupSchedule).toHaveBeenCalledWith({ ...initialStatus().schedule, hourUtc: 18 })
+    expect(admin.setBackupSchedule).toHaveBeenCalledWith({ ...initialStatus().schedule, hour: 18 })
   })
 
   it('shows real running state and polls through a later failed run', async () => {

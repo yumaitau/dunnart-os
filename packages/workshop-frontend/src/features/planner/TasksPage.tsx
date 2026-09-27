@@ -1,3 +1,5 @@
+import { useTimeZone } from "../../AuthContext";
+import { zonedDateKey } from "../../utils/formatTimestamp";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useDocumentTitle } from "../../useDocumentTitle";
@@ -5,6 +7,7 @@ import {
   PRIORITY_LABEL,
   STATUS_LABEL,
   filterTasks,
+  parseDateKey,
   relativeDue,
   type DueFilter,
 } from "./plannerCalendar";
@@ -23,11 +26,13 @@ const DUE: { id: DueFilter; label: string }[] = [
 
 export const TasksPage = () => {
   useDocumentTitle("Tasks");
+  const timeZone = useTimeZone();
+  const today = parseDateKey(zonedDateKey(new Date(), timeZone));
   const planner = usePlanner();
   const [status, setStatus] = useState<TaskStatus | "all">("all");
   const [due, setDue] = useState<DueFilter>("all");
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const tasks = filterTasks(planner.snapshot?.tasks ?? [], status, due);
+  const tasks = filterTasks(planner.snapshot?.tasks ?? [], status, due, today);
   const heading = status === "all" && due === "all" ? "My tasks" : "Tasks";
 
   return (
@@ -92,7 +97,7 @@ export const TasksPage = () => {
                     <td><span className={`badge ${task.status}`}>{STATUS_LABEL[task.status]}</span></td>
                     <td>
                       <div>{task.dueDate ? new Date(`${task.dueDate}T00:00:00`).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—"}</div>
-                      <div className="when">{task.dueTime ? `${task.dueTime} · ` : ""}{relativeDue(task.dueDate)}</div>
+                      <div className="when">{task.dueTime ? `${task.dueTime} · ` : ""}{relativeDue(task.dueDate, today)}</div>
                     </td>
                     <td className="hide-sm">
                       <span className={`badge ${task.priority ?? "normal"}`}>{PRIORITY_LABEL[task.priority ?? "normal"]}</span>

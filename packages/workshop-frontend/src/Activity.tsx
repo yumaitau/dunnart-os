@@ -1,3 +1,5 @@
+import { useTimeZone } from './AuthContext'
+import { zonedDayNumber } from './utils/formatTimestamp'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Switch, useKumoToastManager } from '@cloudflare/kumo'
 import { CaretRight, Check, Eye, Lightning, ShieldCheck } from '@phosphor-icons/react'
@@ -46,12 +48,12 @@ const HISTORY_FILTERS: { value: HistoryViewFilter; label: string }[] = [
   { value: 'bindHook', label: 'Hooks' },
 ]
 
-function formatClockTime(date: Date): string {
-  return new Date(date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+function formatClockTime(date: Date, timeZone: string): string {
+  return new Date(date).toLocaleTimeString([], { timeZone, hour: 'numeric', minute: '2-digit' })
 }
 
-function formatFullDate(date: Date): string {
-  return new Date(date).toLocaleString([], {
+function formatFullDate(date: Date, timeZone: string): string {
+  return new Date(date).toLocaleString([], { timeZone,
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -68,16 +70,12 @@ export function formatRelativeTime(date: Date): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-function startOfDay(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-}
-
-function dayLabel(date: Date): string {
+function dayLabel(date: Date, timeZone: string): string {
   const value = new Date(date)
-  const days = Math.round((startOfDay(new Date()) - startOfDay(value)) / 86_400_000)
+  const days = zonedDayNumber(new Date(), timeZone) - zonedDayNumber(value, timeZone)
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
-  return value.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })
+  return value.toLocaleDateString([], { timeZone, month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 function activityStatus(
@@ -157,6 +155,7 @@ export default function Activity({
   onAutoApproveChange,
   autoApproveReloadTrigger,
 }: ActivityProps) {
+  const timeZone = useTimeZone()
   const { status: pendingStatus, pending: pendingActions } = useActions(overseer)
   const [historyFilter, setHistoryFilter] = useState<HistoryViewFilter>('all')
   const [processingActions, setProcessingActions] = useState<Set<number>>(new Set())
@@ -178,13 +177,13 @@ export default function Activity({
   const historyGroups = useMemo(() => {
     const groups: { label: string; records: ActionLogEntry[] }[] = []
     for (const record of history.entries) {
-      const label = dayLabel(actionChangeTime(record))
+      const label = dayLabel(actionChangeTime(record), timeZone)
       const last = groups.at(-1)
       if (last?.label === label) last.records.push(record)
       else groups.push({ label, records: [record] })
     }
     return groups
-  }, [history.entries])
+  }, [history.entries, timeZone])
 
   const resolveAction = useResolveAction(overseer, setProcessingActions)
 
@@ -673,6 +672,7 @@ function HistoryRow({
   togglingHook: boolean
   onToggleHook: (hookId: number, enabled: boolean) => void
 }) {
+  const timeZone = useTimeZone()
   const resourceUrl = safeExternalUrl(record.resourceUrl)
   const resolvedBy = record.type === 'action' ? record.resolvedBy : undefined
   const autoApproved = record.type === 'action' && record.autoApproved === true
@@ -688,7 +688,7 @@ function HistoryRow({
         className="group grid w-full cursor-pointer grid-cols-[54px_minmax(0,1fr)_auto_16px] items-center gap-3 border-b border-kumo-line/70 px-5 py-[7px] text-left transition-colors hover:bg-kumo-elevated/50"
       >
         <time className="text-[11.5px] tabular-nums leading-4 text-kumo-inactive">
-          {formatClockTime(at)}
+          {formatClockTime(at, timeZone)}
         </time>
         <span className="flex min-w-0 items-center gap-2">
           <TypeIcon record={record} className="flex-shrink-0 text-kumo-inactive" />
@@ -717,7 +717,7 @@ function HistoryRow({
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] text-kumo-inactive">
-            <span>{formatFullDate(at)}</span>
+            <span>{formatFullDate(at, timeZone)}</span>
             <span className="text-kumo-subtle">{record.resourceTitle}</span>
             {resolvedBy && (
               <ResolverBadge profileId={resolvedBy.id}>

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { Button, Input, Select, Switch } from '@cloudflare/kumo'
+import { TimeZonePicker } from '../timezone/TimeZonePicker'
 import type { BackupSchedule } from './backupTypes'
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -25,20 +26,21 @@ export const BackupScheduleForm = ({ schedule, busy, onSave }: {
         <Select.Option value="daily">Daily</Select.Option>
         <Select.Option value="weekly">Weekly</Select.Option>
       </Select>
+      <TimeZonePicker value={draft.timeZone} disabled={busy} onChange={(timeZone) => setDraft({ ...draft, timeZone })} />
       {draft.frequency === 'weekly' && (
-        <Select label="Day of week (UTC)" value={String(draft.weekdayUtc)} disabled={busy} className="w-full" container={form}
+        <Select label="Day of week" value={String(draft.weekday)} disabled={busy} className="w-full" container={form}
           renderValue={(value) => weekdays[Number(value)]}
-          onValueChange={(value) => { if (value !== null) setDraft({ ...draft, weekdayUtc: Number(value) }) }}>
+          onValueChange={(value) => { if (value !== null) setDraft({ ...draft, weekday: Number(value) }) }}>
           {weekdays.map((label, index) => <Select.Option key={label} value={String(index)}>{label}</Select.Option>)}
         </Select>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input label="Hour (UTC, 0–23)" type="number" min={0} max={23} step={1} required
-          value={draft.hourUtc} disabled={busy} onChange={(event) => setDraft({ ...draft, hourUtc: Number(event.target.value) })} />
+        <Input label="Hour (0–23)" type="number" min={0} max={23} step={1} required
+          value={draft.hour} disabled={busy} onChange={(event) => setDraft({ ...draft, hour: Number(event.target.value) })} />
         <Input label="Backups to retain" type="number" min={1} step={1} required
           value={draft.retention} disabled={busy} onChange={(event) => setDraft({ ...draft, retention: Number(event.target.value) })} />
       </div>
-      <p className="text-sm text-kumo-subtle dark:text-kumo-default">Times use UTC, including during daylight saving time. Retention keeps this many completed backups.</p>
+      <p className="text-sm text-kumo-subtle dark:text-kumo-default">Times use the selected timezone and follow daylight saving. Skipped hours run after the clock change; repeated hours run once. Retention keeps this many completed backups.</p>
       <Button type="submit" variant="primary" disabled={busy}>Save schedule</Button>
       </fieldset>
     </form>

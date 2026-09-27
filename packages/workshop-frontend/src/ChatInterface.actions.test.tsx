@@ -35,6 +35,7 @@ vi.mock('./AuthContext', () => {
     currentUser: null,
   }
   return {
+    useTimeZone: () => 'Australia/Sydney',
     useAuthenticatedApi: () => context,
     useOptionalAuthenticatedApi: () => null,
   }

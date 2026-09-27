@@ -1,3 +1,4 @@
+import { useTimeZone } from './AuthContext'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Dialog, useKumoToastManager } from '@cloudflare/kumo'
 import { ArrowsClockwise, Check, Copy, ImageSquare, Pencil, Plus, Trash, Warning, X } from '@phosphor-icons/react'
@@ -571,6 +572,7 @@ function BlueprintRow({
   onConfirmDelete: () => void
   onCancelDelete: () => void
 }) {
+  const timeZone = useTimeZone()
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   useEffect(() => {
     if (copyState === 'idle') return
@@ -637,7 +639,7 @@ function BlueprintRow({
               aria-hidden="true"
             />
           )}
-          v{bp.version} · {new Date(bp.codeVersionDate).toLocaleDateString()}
+          v{bp.version} · {new Date(bp.codeVersionDate).toLocaleDateString(undefined, { timeZone })}
         </span>
       </div>
 

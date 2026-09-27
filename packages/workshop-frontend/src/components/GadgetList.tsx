@@ -1,3 +1,4 @@
+import { useTimeZone } from '../AuthContext'
 import { Link } from '@tanstack/react-router'
 import { Clock, MagnifyingGlass, Hexagon, DotsThreeVertical, ShareNetwork, Trash, Info, Star, Pencil, ArrowRight } from '@phosphor-icons/react'
 import { useState, useEffect, useRef } from 'react'
@@ -169,6 +170,7 @@ function AppRow({
 }
 
 export default function GadgetList({ showHeader = true }: { showHeader?: boolean } = {}) {
+  const timeZone = useTimeZone()
   const { authenticatedApi } = useAuthenticatedApi()
   const toasts = useKumoToastManager()
   const [gadgets, setGadgets] = useState<GadgetMetadataWithTimestamps[]>([])
@@ -442,13 +444,13 @@ export default function GadgetList({ showHeader = true }: { showHeader?: boolean
             <div className="flex justify-between">
               <span className="text-kumo-subtle">Created</span>
               <span className="text-kumo-default">
-                {infoTarget?.created?.toLocaleString()}
+                {infoTarget?.created?.toLocaleString(undefined, { timeZone })}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-kumo-subtle">Last active</span>
               <span className="text-kumo-default">
-                {infoTarget?.lastActive?.toLocaleString()}
+                {infoTarget?.lastActive?.toLocaleString(undefined, { timeZone })}
               </span>
             </div>
           </div>

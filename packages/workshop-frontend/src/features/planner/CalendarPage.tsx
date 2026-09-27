@@ -1,3 +1,5 @@
+import { useTimeZone } from "../../AuthContext";
+import { zonedDateKey } from "../../utils/formatTimestamp";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useDocumentTitle } from "../../useDocumentTitle";
@@ -7,6 +9,7 @@ import {
   HOUR_HEIGHT,
   calendarItems,
   dateKey,
+  parseDateKey,
   formatClock,
   itemsOn,
   rangeTitle,
@@ -32,16 +35,20 @@ const HOURS = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, index) =
 
 export const CalendarPage = () => {
   useDocumentTitle("Calendar");
+  const timeZone = useTimeZone();
   const planner = usePlanner();
   const [view, setView] = useState<CalendarView>("week");
-  const [anchor, setAnchor] = useState(() => new Date());
+  const [selectedAnchor, setAnchor] = useState<Date | null>(null);
+  const anchor = selectedAnchor ?? parseDateKey(zonedDateKey(new Date(), timeZone));
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const today = dateKey(new Date());
+  const today = zonedDateKey(new Date(), timeZone);
   const items = calendarItems(planner.snapshot?.tasks ?? [], planner.snapshot?.events ?? []);
   const days = visibleDays(view, anchor);
-  const now = new Date();
-  const nowTop = ((now.getHours() * 60 + now.getMinutes()) - DAY_START_HOUR * 60) / 60 * HOUR_HEIGHT;
-  const showNow = now.getHours() >= DAY_START_HOUR && now.getHours() < DAY_END_HOUR;
+  const clock = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+  const hour = Number(clock.find(part => part.type === "hour")!.value);
+  const minute = Number(clock.find(part => part.type === "minute")!.value);
+  const nowTop = ((hour * 60 + minute) - DAY_START_HOUR * 60) / 60 * HOUR_HEIGHT;
+  const showNow = hour >= DAY_START_HOUR && hour < DAY_END_HOUR;
 
   const openItem = (item: CalendarItem) => {
     if (item.task) setEditor({ kind: "task", task: item.task, date: item.date, time: item.time ?? "" });
@@ -57,7 +64,7 @@ export const CalendarPage = () => {
       <header className="planner-head">
         <div>
           <h1>Calendar</h1>
-          <p className="sub">Schedule task due dates and keep the week’s work visible in one place.</p>
+          <p className="sub">Schedule task due dates and keep the week’s work visible in one place. Times: {timeZone}.</p>
         </div>
         <div className="planner-actions">
           <Link to="/tasks" className="btn">Tasks</Link>
@@ -75,7 +82,7 @@ export const CalendarPage = () => {
       <section className="card surface">
         <div className="toolbar planner-toolbar">
           <div className="planner-nav">
-            <button type="button" className="btn" onClick={() => setAnchor(new Date())}>Today</button>
+            <button type="button" className="btn" onClick={() => setAnchor(null)}>Today</button>
             <button type="button" className="btn icon" aria-label="Previous date range" onClick={() => setAnchor(shiftAnchor(view, anchor, -1))}>‹</button>
             <button type="button" className="btn icon" aria-label="Next date range" onClick={() => setAnchor(shiftAnchor(view, anchor, 1))}>›</button>
             <div className="range"><span>{rangeTitle(view, anchor)}</span></div>

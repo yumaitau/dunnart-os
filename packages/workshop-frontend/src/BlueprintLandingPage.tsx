@@ -1,3 +1,4 @@
+import { useTimeZone } from './AuthContext'
 import { logRpcFailure } from './rpcErrors'
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
@@ -33,6 +34,7 @@ type BindingFormState = Record<string, any>
 const NO_AGENT_MODEL_ID = 'gadgets:sentinel:no-agent-model'
 
 export default function BlueprintLandingPage({ rpcStub }: Props) {
+  const timeZone = useTimeZone()
   const params = useParams({ strict: false }) as { id?: string }
   const id = params.id ?? ''
   const navigate = useNavigate()
@@ -812,7 +814,7 @@ export default function BlueprintLandingPage({ rpcStub }: Props) {
               <span className="text-kumo-inactive">•</span>
               <span>v{meta.version}</span>
               <span className="text-kumo-inactive">•</span>
-              <span>Updated {new Date(meta.lastUpdated).toLocaleDateString()}</span>
+              <span>Updated {new Date(meta.lastUpdated).toLocaleDateString(undefined, { timeZone })}</span>
             </div>
           </div>
 

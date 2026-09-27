@@ -1,4 +1,5 @@
 import { SecuritySettings } from './features/auth/SecuritySettings'
+import { TimeZoneSettings } from './features/timezone/TimeZoneSettings'
 import { useServerConfig } from './ServerConfigContext'
 import { useKumoToastManager } from '@cloudflare/kumo'
 import { useAuthenticatedApi } from './AuthContext'
@@ -383,6 +384,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Usage & billing — only when the Cloudflare limits flow is enabled server-side */}
+        <TimeZoneSettings />
         <UsageSettings />
 
         {betterAuth && <SecuritySettings />}

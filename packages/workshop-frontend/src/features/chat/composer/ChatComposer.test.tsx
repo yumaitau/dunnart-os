@@ -25,7 +25,8 @@ vi.mock("@cloudflare/kumo", async (importOriginal) => ({
 }));
 
 vi.mock("../../../AuthContext", () => ({
-  useAuthenticatedApi: () => ({ authenticatedApi: {} }),
+  useTimeZone: () => 'Australia/Sydney',
+    useAuthenticatedApi: () => ({ authenticatedApi: {} }),
 }));
 
 vi.mock("../../../useVendorBranding", () => ({

@@ -102,10 +102,10 @@ import { actionLogResumed, useActionEntries } from "./useActions";
 import { useAlwaysApproveTag } from "./useAlwaysApproveTag";
 import { useResolveAction } from "./useResolveAction";
 import { safeExternalUrl } from "./utils/safeExternalUrl";
-import { useAuthenticatedApi } from "./AuthContext";
+import { useAuthenticatedApi, useTimeZone } from "./AuthContext";
 import { useVendorBranding } from "./useVendorBranding";
 import OutOfCreditsModal from "./components/billing/OutOfCreditsModal";
-import { formatFullTimestamp } from "./utils/formatTimestamp";
+import { formatFullTimestamp, zonedDayNumber, zonedDateKey } from "./utils/formatTimestamp";
 import { copyToClipboard } from "./clipboard";
 import { isImeComposing } from "./keyboardEvent";
 import { formatAttachmentSize } from "./features/chat/attachmentFormatting";
@@ -1657,6 +1657,7 @@ const ToolGroupRow = memo(function ToolGroupRow({
   onFooterRevert?: (sequence: number) => void;
   outputOf?: ToolOutputResolver;
 }) {
+  const timeZone = useTimeZone();
   const footerLabel = footerChangeSequence !== undefined
     ? getDiscardLabel(footerIsTrailing, footerCreatedWorkpieces)
     : null;
@@ -1742,9 +1743,9 @@ const ToolGroupRow = memo(function ToolGroupRow({
               <ArrowUUpLeft size={15} />
             </button>
           </Tooltip>
-          <Tooltip content={formatFullTimestamp(footerTimestamp)} asChild>
+          <Tooltip content={formatFullTimestamp(footerTimestamp, timeZone)} asChild>
             <span className="px-1 font-mono text-[11px] leading-4 text-kumo-inactive">
-              {footerTimestamp.toLocaleTimeString([], {
+              {footerTimestamp.toLocaleTimeString([], { timeZone,
                 hour: "2-digit",
                 minute: "2-digit",
               })}
@@ -2497,16 +2498,8 @@ const CHAT_TIME_BUCKET_ORDER: ChatTimeBucket[] = [
   "earlier",
 ];
 
-function startOfDay(d: Date): Date {
-  const out = new Date(d);
-  out.setHours(0, 0, 0, 0);
-  return out;
-}
-
-function getChatTimeBucket(date: Date, now: Date): ChatTimeBucket {
-  const diffDays = Math.round(
-    (startOfDay(now).getTime() - startOfDay(date).getTime()) / 86_400_000,
-  );
+function getChatTimeBucket(date: Date, now: Date, timeZone: string): ChatTimeBucket {
+  const diffDays = zonedDayNumber(now, timeZone) - zonedDayNumber(date, timeZone);
   if (diffDays <= 0) return "today";
   if (diffDays === 1) return "yesterday";
   if (diffDays < 7) return "thisWeek";
@@ -2516,21 +2509,21 @@ function getChatTimeBucket(date: Date, now: Date): ChatTimeBucket {
 // Format a chat's lastActive for display in a row, given its bucket. Buckets
 // own the "date" half of the label (via the section header), so rows only show
 // what the header doesn't.
-function formatChatRowTime(date: Date, bucket: ChatTimeBucket, now: Date): string {
-  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function formatChatRowTime(date: Date, bucket: ChatTimeBucket, now: Date, timeZone: string): string {
+  const time = date.toLocaleTimeString([], { timeZone, hour: "numeric", minute: "2-digit" });
   if (bucket === "today" || bucket === "yesterday") {
     return time;
   }
   if (bucket === "thisWeek") {
-    const day = date.toLocaleDateString([], { weekday: "short" });
+    const day = date.toLocaleDateString([], { timeZone, weekday: "short" });
     return `${day} ${time}`;
   }
-  const sameYear = date.getFullYear() === now.getFullYear();
+  const sameYear = zonedDateKey(date, timeZone).slice(0, 4) === zonedDateKey(now, timeZone).slice(0, 4);
   return date.toLocaleDateString(
     [],
     sameYear
-      ? { month: "short", day: "numeric" }
-      : { month: "short", day: "numeric", year: "numeric" },
+      ? { timeZone, month: "short", day: "numeric" }
+      : { timeZone, month: "short", day: "numeric", year: "numeric" },
   );
 }
 
@@ -2659,6 +2652,7 @@ function ChatInterface({
   onOpenGadget,
   outputOfWorkpiece,
 }: ChatInterfaceProps) {
+  const timeZone = useTimeZone();
   // Persistent cache that survives reconnects
   const toasts = useKumoToastManager();
   const { currentUser } = useAuthenticatedApi();
@@ -2935,7 +2929,7 @@ function ChatInterface({
     const now = new Date();
     const buckets = new Map<ChatTimeBucket, AiChatMetadata[]>();
     for (const chat of visible) {
-      const bucket = getChatTimeBucket(chat.lastActive, now);
+      const bucket = getChatTimeBucket(chat.lastActive, now, timeZone);
       let arr = buckets.get(bucket);
       if (!arr) {
         arr = [];
@@ -2958,7 +2952,7 @@ function ChatInterface({
         { value: "agents" as const, count: agentCount },
       ],
     };
-  }, [chatList, chatListScope]);
+  }, [chatList, chatListScope, timeZone]);
 
   // Notify parent when chat list changes. Gated on chatListReady so that we
   // don't report 0 from the empty initial cache before listChats() has completed.
@@ -5232,7 +5226,7 @@ function ChatInterface({
                           </>
                         )}
                         <span className="flex-shrink-0">
-                          {formatChatRowTime(chat.lastActive, bucket, chatListNow)}
+                          {formatChatRowTime(chat.lastActive, bucket, chatListNow, timeZone)}
                         </span>
                         {chat.totalCost != null && (
                           <>
@@ -5649,9 +5643,9 @@ function ChatInterface({
                                   </button>
                                 </Tooltip>
                                 )}
-                                <Tooltip content={formatFullTimestamp(entry.message.timestamp)} asChild>
+                                <Tooltip content={formatFullTimestamp(entry.message.timestamp, timeZone)} asChild>
                                   <span className="px-1 font-mono text-[11px] leading-4 text-kumo-inactive">
-                                    {entry.message.timestamp.toLocaleTimeString([], {
+                                    {entry.message.timestamp.toLocaleTimeString([], { timeZone,
                                       hour: "2-digit",
                                       minute: "2-digit",
                                     })}
@@ -5736,9 +5730,9 @@ function ChatInterface({
                               {!(hideOwnUserName && msg.author.id === currentUser?.id) && (
                                 <span className="font-medium">{msg.author.name}</span>
                               )}
-                              <Tooltip content={formatFullTimestamp(msg.timestamp)} asChild>
+                              <Tooltip content={formatFullTimestamp(msg.timestamp, timeZone)} asChild>
                                 <span className="font-mono">
-                                  {msg.timestamp.toLocaleTimeString([], {
+                                  {msg.timestamp.toLocaleTimeString([], { timeZone,
                                     hour: "2-digit",
                                     minute: "2-digit",
                                   })}
@@ -5786,9 +5780,9 @@ function ChatInterface({
                                 {!(hideOwnUserName && msg.author.id === currentUser?.id) && (
                                   <span className="font-medium">{msg.author.name}</span>
                                 )}
-                                <Tooltip content={formatFullTimestamp(msg.timestamp)} asChild>
+                                <Tooltip content={formatFullTimestamp(msg.timestamp, timeZone)} asChild>
                                   <span className="font-mono">
-                                    {msg.timestamp.toLocaleTimeString([], {
+                                    {msg.timestamp.toLocaleTimeString([], { timeZone,
                                       hour: "2-digit",
                                       minute: "2-digit",
                                     })}
@@ -5873,9 +5867,9 @@ function ChatInterface({
                                     </Tooltip>
                                     );
                                   })()}
-                                  <Tooltip content={formatFullTimestamp(msg.timestamp)} asChild>
+                                  <Tooltip content={formatFullTimestamp(msg.timestamp, timeZone)} asChild>
                                     <span className="px-1 font-mono text-[11px] leading-4 text-kumo-inactive">
-                                      {msg.timestamp.toLocaleTimeString([], {
+                                      {msg.timestamp.toLocaleTimeString([], { timeZone,
                                         hour: "2-digit",
                                         minute: "2-digit",
                                       })}
@@ -5945,8 +5939,8 @@ function ChatInterface({
                                 <Tooltip
                                   content={
                                     isMerge
-                                      ? `Accepted draft changes${ts ? ` through ${formatFullTimestamp(ts)}` : ""}.`
-                                      : `Returned to the gadget state before the prompt sent ${ts ? `at ${ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "earlier"}.`
+                                      ? `Accepted draft changes${ts ? ` through ${formatFullTimestamp(ts, timeZone)}` : ""}.`
+                                      : `Returned to the gadget state before the prompt sent ${ts ? `at ${ts.toLocaleTimeString([], { timeZone, hour: "2-digit", minute: "2-digit" })}` : "earlier"}.`
                                   }
                                   asChild
                                 >
@@ -5972,7 +5966,7 @@ function ChatInterface({
 
                         {msg.type === "useGadget" && (
                           <div className="max-w-[860px] text-[14px] leading-5 tracking-[-0.25px] text-kumo-subtle">
-                            <Tooltip content={`Used the gadget at ${formatFullTimestamp(msg.timestamp)}`} asChild>
+                            <Tooltip content={`Used the gadget at ${formatFullTimestamp(msg.timestamp, timeZone)}`} asChild>
                               <span className="inline-flex items-center gap-3 px-1.5 py-1">
                                 <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-kumo-inactive" aria-hidden="true">
                                   <Plug size={16} />
@@ -5999,7 +5993,7 @@ function ChatInterface({
                                     className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md text-left transition-colors duration-150 ease-out hover:text-kumo-default focus-visible:text-kumo-default focus-visible:outline-none active:scale-[0.995]"
                                     aria-expanded={expanded}
                                   >
-                                    <Tooltip content={formatFullTimestamp(msg.timestamp)} asChild>
+                                    <Tooltip content={formatFullTimestamp(msg.timestamp, timeZone)} asChild>
                                       <span className="flex min-w-0 flex-1 items-center gap-2">
                                         <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-kumo-danger" aria-hidden="true">
                                           <WarningCircle size={16} weight="fill" />
@@ -6057,7 +6051,7 @@ function ChatInterface({
 
                         {msg.type === "agentCallback" && (
                           <div className="max-w-[860px] text-[14px] leading-5 tracking-[-0.25px] text-kumo-subtle">
-                            <Tooltip content={`Call received at ${formatFullTimestamp(msg.timestamp)}`} asChild>
+                            <Tooltip content={`Call received at ${formatFullTimestamp(msg.timestamp, timeZone)}`} asChild>
                               <div className="flex items-center gap-3 px-1.5 py-1">
                                 <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-kumo-inactive" aria-hidden="true">
                                   <Code size={16} />

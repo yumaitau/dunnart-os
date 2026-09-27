@@ -39,7 +39,8 @@ const listGadgets = vi.fn<() => Promise<{ id: string; title: string }[]>>(async 
 const authenticatedApi = { listGadgets };
 
 vi.mock("./AuthContext", () => ({
-  useAuthenticatedApi: () => ({ authenticatedApi }),
+  useTimeZone: () => 'Australia/Sydney',
+    useAuthenticatedApi: () => ({ authenticatedApi }),
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

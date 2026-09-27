@@ -13,7 +13,8 @@ import {
 import { useAuthenticatedApi } from "./AuthContext";
 import { FeatureFlagsProvider, useUiFeatureFlags } from "./FeatureFlagsContext";
 
-vi.mock("./AuthContext", () => ({ useAuthenticatedApi: vi.fn<typeof useAuthenticatedApi>() }));
+vi.mock("./AuthContext", () => ({ useTimeZone: () => 'Australia/Sydney',
+    useAuthenticatedApi: vi.fn<typeof useAuthenticatedApi>() }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

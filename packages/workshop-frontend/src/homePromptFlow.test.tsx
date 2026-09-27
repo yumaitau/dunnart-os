@@ -33,7 +33,8 @@ vi.mock("@cloudflare/kumo", () => ({
 }));
 
 vi.mock("./AuthContext", () => ({
-  useAuthenticatedApi: () => ({
+  useTimeZone: () => 'Australia/Sydney',
+    useAuthenticatedApi: () => ({
     authenticatedApi: testState.authenticatedApi,
     currentUser: testState.currentUser,
   }),

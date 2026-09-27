@@ -104,8 +104,8 @@ archive bucket, stable deployment ID, authentication key, and public key, but no
 private recovery key. Reconfigure these from the offline inventory before
 rescanning a replacement coordinator.
 
-Schedules support daily or weekly capture at an integer UTC hour, with weekday
-`0` meaning Sunday. Default: disabled, daily at 03:00 UTC, retaining seven
+Schedules support daily or weekly capture at an integer local hour in an IANA timezone, with weekday
+`0` meaning Sunday. Default: disabled, daily at 03:00 Australia/Sydney, retaining seven
 successful archives. Retention accepts 1–100 successful recovery points. Saving
 the schedule persists it and adjusts the Durable Object alarm directly; backup
 scheduling does not require activating a Scheduled Tasks connector hook.
@@ -291,3 +291,9 @@ and release escrow. Passing local or workerd tests establishes those tested
 behaviors. Production readiness additionally requires the intended deployment's
 configured coverage, a completed archive, and a separately recorded restore
 drill with observed application behavior.
+
+## Timezones
+
+Profile → Date and time saves an IANA timezone to the account; new accounts default to `Australia/Sydney`. Product timestamps, calendar today markers, and agent scheduling context use this setting. Date-only planner entries remain calendar dates.
+
+Backup schedules have their own timezone selector, defaulting to Sydney for new schedules. Hours and weekdays refer to that timezone and follow daylight saving. A skipped hour runs after the clock change; a repeated hour runs once, at its first occurrence. Existing UTC schedules migrate to explicit `UTC` without changing their timing. Changing an account timezone does not move existing backup or connector schedules.

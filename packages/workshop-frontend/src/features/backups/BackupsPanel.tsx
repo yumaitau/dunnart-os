@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { DEFAULT_TIME_ZONE } from '@gadgets/workshop-shared/time-zone'
 import { Button } from '@cloudflare/kumo'
 import { BackupScheduleForm } from './BackupScheduleForm'
 import { BackupRestorePanel } from './BackupRestorePanel'
 import type { BackupsApi, BackupStatus, RestorePreview } from './backupTypes'
 
-const utcTime = (timestamp: number) => `${new Date(timestamp).toISOString().replace('T', ' ').slice(0, 19)} UTC`
+
 
 export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
   const [status, setStatus] = useState<BackupStatus | null>(null)
@@ -67,6 +68,10 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
     }
   }
 
+  const scheduleTime = (timestamp: number) => new Intl.DateTimeFormat(undefined, {
+    timeZone: status?.schedule.timeZone ?? DEFAULT_TIME_ZONE, year: 'numeric', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
+  }).format(timestamp)
   const ready = status?.configured && status.recoveryKeyId !== null && status.coverage.length > 0 && status.coverage.every((item) => item.ready)
 
   return (
@@ -94,7 +99,7 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
               <li key={item.id}><span className="font-medium">{item.title}: {item.ready ? 'Ready' : 'Blocked'}</span>{item.reason && <p className="text-kumo-subtle dark:text-kumo-default">{item.reason}</p>}</li>
             ))}</ul>
           )}
-          <p className="text-sm">Next scheduled run: {status.nextRunAt === null ? 'Not scheduled' : utcTime(status.nextRunAt)}</p>
+          <p className="text-sm">Next scheduled run: {status.nextRunAt === null ? 'Not scheduled' : scheduleTime(status.nextRunAt)}</p>
           {status.running && <p role="status" className="text-sm">Backup running. Status updates automatically.</p>}
           <p className="text-sm text-kumo-subtle dark:text-kumo-default">Capture briefly pauses writes and reconnects active sessions.</p>
           <Button variant="primary" disabled={busy || !!statusError || !ready || status.running} onClick={() => void perform(async (isCurrent) => {
@@ -131,11 +136,11 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
           <ul className="space-y-4">{status.runs.map((run) => (
             <li key={run.id} className="border-t border-kumo-line pt-4 space-y-2">
               <h4 className="text-sm font-semibold break-all">{run.id}</h4>
-              <p className="text-sm">{run.status === 'complete' ? 'Complete' : run.status === 'failed' ? 'Failed' : 'Running'} · {run.trigger === 'manual' ? 'Manual' : run.trigger === 'scheduled' ? 'Scheduled' : 'Recovered from archive storage'} · {utcTime(run.startedAt)}</p>
-              {run.finishedAt !== null && <p className="text-sm text-kumo-subtle dark:text-kumo-default">Finished: {utcTime(run.finishedAt)}</p>}
+              <p className="text-sm">{run.status === 'complete' ? 'Complete' : run.status === 'failed' ? 'Failed' : 'Running'} · {run.trigger === 'manual' ? 'Manual' : run.trigger === 'scheduled' ? 'Scheduled' : 'Recovered from archive storage'} · {scheduleTime(run.startedAt)}</p>
+              {run.finishedAt !== null && <p className="text-sm text-kumo-subtle dark:text-kumo-default">Finished: {scheduleTime(run.finishedAt)}</p>}
               <p className="text-sm text-kumo-subtle dark:text-kumo-default">{run.components} components · {run.bytes.toLocaleString()} bytes</p>
               {run.error && <p className="border-l-4 border-kumo-danger pl-3 text-sm text-kumo-default">{run.error}</p>}
-              <p className="text-sm">Archive integrity: {run.verifiedAt ? `verified ${utcTime(run.verifiedAt)}` : 'not verified'}</p>
+              <p className="text-sm">Archive integrity: {run.verifiedAt ? `verified ${scheduleTime(run.verifiedAt)}` : 'not verified'}</p>
               {run.status === 'complete' && <div className="flex flex-wrap gap-2">
                 <Button disabled={busy} aria-label={`Verify archive ${run.id}`} onClick={() => void perform(async () => {
                   const result = await admin.verifyBackup(run.id)
