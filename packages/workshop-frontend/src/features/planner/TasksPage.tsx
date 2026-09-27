@@ -91,7 +91,10 @@ export const TasksPage = () => {
                     onClick={() => setEditor({ kind: "task", task, date: task.dueDate ?? "", time: task.dueTime ?? "" })}
                   >
                     <td>
-                      <div className="title">{task.title}</div>
+                      <button type="button" className="task-link" onClick={(event) => {
+                        event.stopPropagation();
+                        setEditor({ kind: "task", task, date: task.dueDate ?? "", time: task.dueTime ?? "" });
+                      }}>{task.title}</button>
                       {task.description && <div className="desc">{task.description}</div>}
                     </td>
                     <td><span className={`badge ${task.status}`}>{STATUS_LABEL[task.status]}</span></td>
@@ -113,6 +116,7 @@ export const TasksPage = () => {
       <TaskDialog
         editor={editor}
         pending={planner.pending}
+        error={planner.error}
         onClose={() => setEditor(null)}
         onSaveTask={planner.saveTask}
         onDeleteTask={planner.deleteTask}

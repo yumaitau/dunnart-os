@@ -159,6 +159,7 @@ export const CalendarPage = () => {
       <TaskDialog
         editor={editor}
         pending={planner.pending}
+        error={planner.error}
         onClose={() => setEditor(null)}
         onSaveTask={planner.saveTask}
         onDeleteTask={planner.deleteTask}
@@ -188,68 +189,70 @@ const TimeGrid = ({
 }) => {
   const single = days.length === 1;
   return (
-    <>
-      <div className={single ? "day-only" : "week"} style={{ display: "grid" }}>
-        <div />
-        {days.map((day) => {
-          const key = dateKey(day);
-          return (
-            <div key={key} className={`col-head${key === today ? " today" : ""}`}>
-              {day.toLocaleDateString("en-AU", { weekday: "short", day: "numeric" })}
-            </div>
-          );
-        })}
-      </div>
-      <div className={`allday${single ? " day-only" : ""}`}>
-        <div className="allday-label">All day</div>
-        {days.map((day) => {
-          const key = dateKey(day);
-          return (
-            <div key={key} className="allday-cell">
-              {itemsOn(items, key).filter((item) => !item.time).map((item) => (
-                <button key={item.id} type="button" className={`chip${item.kind === "event" ? " event" : ""}${item.done ? " done" : ""}`} onClick={() => onOpenItem(item)}>
-                  {item.title}
-                </button>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-      <div className={`${single ? "day-only" : "week"} hours`} style={{ display: "grid" }}>
-        <div>
-          {HOURS.map((hour) => (
-            <div key={hour} className="hour">{hour % 12 || 12}{hour >= 12 ? "pm" : "am"}</div>
-          ))}
+    <div className="calendar-scroll" role="region" aria-label="Calendar schedule" tabIndex={0}>
+      <div className={`time-grid${single ? " single" : ""}`}>
+        <div className={single ? "day-only" : "week"} style={{ display: "grid" }}>
+          <div />
+          {days.map((day) => {
+            const key = dateKey(day);
+            return (
+              <div key={key} className={`col-head${key === today ? " today" : ""}`}>
+                {day.toLocaleDateString("en-AU", { weekday: "short", day: "numeric" })}
+              </div>
+            );
+          })}
         </div>
-        {days.map((day) => {
-          const key = dateKey(day);
-          return (
-            <div
-              key={key}
-              className="col"
-              onClick={(event) => {
-                const bounds = event.currentTarget.getBoundingClientRect();
-                onOpenSlot(key, timeFromOffset(event.clientY - bounds.top));
-              }}
-            >
-              {HOURS.map((hour) => <div key={hour} className="slot" />)}
-              {key === today && showNow && <div className="now" style={{ top: nowTop }} />}
-              {itemsOn(items, key).filter((item) => item.time).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`chip timed${item.kind === "event" ? " event" : ""}${item.done ? " done" : ""}${item.priority === "urgent" ? " urgent" : ""}`}
-                  style={{ top: topForTime(item.time!) }}
-                  onClick={(event) => { event.stopPropagation(); onOpenItem(item); }}
-                >
-                  <small>{formatClock(item.time!)} · {item.kind === "event" ? "Event" : "Task"}</small>
-                  {item.title}
-                </button>
-              ))}
-            </div>
-          );
-        })}
+        <div className={`allday${single ? " day-only" : ""}`}>
+          <div className="allday-label">All day</div>
+          {days.map((day) => {
+            const key = dateKey(day);
+            return (
+              <div key={key} className="allday-cell">
+                {itemsOn(items, key).filter((item) => !item.time).map((item) => (
+                  <button key={item.id} type="button" className={`chip${item.kind === "event" ? " event" : ""}${item.done ? " done" : ""}`} onClick={() => onOpenItem(item)}>
+                    {item.title}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+        <div className={`${single ? "day-only" : "week"} hours`} style={{ display: "grid" }}>
+          <div>
+            {HOURS.map((hour) => (
+              <div key={hour} className="hour">{hour % 12 || 12}{hour >= 12 ? "pm" : "am"}</div>
+            ))}
+          </div>
+          {days.map((day) => {
+            const key = dateKey(day);
+            return (
+              <div
+                key={key}
+                className="col"
+                onClick={(event) => {
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  onOpenSlot(key, timeFromOffset(event.clientY - bounds.top));
+                }}
+              >
+                {HOURS.map((hour) => <div key={hour} className="slot" />)}
+                {key === today && showNow && <div className="now" style={{ top: nowTop }} />}
+                {itemsOn(items, key).filter((item) => item.time).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`chip timed${item.kind === "event" ? " event" : ""}${item.done ? " done" : ""}${item.priority === "urgent" ? " urgent" : ""}`}
+                    style={{ top: topForTime(item.time!) }}
+                    onClick={(event) => { event.stopPropagation(); onOpenItem(item); }}
+                  >
+                    <small>{formatClock(item.time!)} · {item.kind === "event" ? "Event" : "Task"}</small>
+                    {item.title}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </>
+    </div>
   );
 };

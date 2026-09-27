@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { X } from "@phosphor-icons/react";
 import type { PlannerEvent, PlannerTask, TaskPriority, TaskStatus } from "./plannerTypes";
 
 export type EditorState =
@@ -8,6 +9,7 @@ export type EditorState =
 type Props = {
   editor: EditorState | null;
   pending: boolean;
+  error: string | null;
   onClose: () => void;
   onSaveTask: (input: {
     title: string;
@@ -25,6 +27,7 @@ type Props = {
 export const TaskDialog = ({
   editor,
   pending,
+  error,
   onClose,
   onSaveTask,
   onDeleteTask,
@@ -57,9 +60,14 @@ export const TaskDialog = ({
       }}
       onClose={onClose}
     >
-      <h2 id={titleId}>{heading}</h2>
+      <div className="dialog-heading">
+        <h2 id={titleId}>{heading}</h2>
+        <button type="button" className="btn icon" aria-label="Close dialog" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
       {editor.kind === "task" ? (
         <form
+          aria-busy={pending}
           onSubmit={(event) => {
             event.preventDefault();
             const data = new FormData(event.currentTarget);
@@ -126,6 +134,7 @@ export const TaskDialog = ({
         </form>
       ) : (
         <form
+          aria-busy={pending}
           onSubmit={(event) => {
             event.preventDefault();
             const data = new FormData(event.currentTarget);

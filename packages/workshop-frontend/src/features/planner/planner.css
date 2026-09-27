@@ -1,18 +1,12 @@
+/* Hallmark · planner workbench · existing Dunnart/Kumo theme.
+ * Pre-emit critique: P4 H4 E4 S4 R5 V4. */
 .planner {
-  --forest: #1c3829;
-  --forest-ink: #142a1f;
-  --cream: #f5f0e8;
-  --ochre: #c8871a;
-  --rust: #a04515;
-  --sage: #4a7c59;
-  --line: color-mix(in srgb, var(--forest) 14%, white);
-  --ink: #1c1915;
-  --muted: #5e675f;
-  color: var(--ink);
+  color: var(--text-color-kumo-default);
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-height: 100%;
+  min-width: 0;
   padding: 28px 28px 48px;
 }
 
@@ -25,15 +19,14 @@
 }
 
 .planner .sub {
-  color: var(--muted);
+  color: var(--text-color-kumo-subtle);
   font-size: 0.875rem;
   margin: 4px 0 0;
   max-width: 40rem;
 }
 
 .planner-head,
-.planner-toolbar,
-.planner-filters {
+.planner-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -59,33 +52,42 @@
 }
 
 .planner .btn {
-  border: 1px solid var(--line);
-  background: white;
-  color: var(--ink);
+  border: 1px solid var(--color-kumo-line);
+  background: var(--color-kumo-control);
+  color: var(--text-color-kumo-default);
   border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 500;
   min-height: 40px;
   padding: 0 14px;
   cursor: pointer;
 }
 
-.planner .btn:hover { background: var(--cream); }
-.planner .btn:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+.planner .btn:hover { background: var(--color-kumo-elevated); }
+.planner :is(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--color-kumo-brand); outline-offset: 2px; }
+.planner .btn:active:not(:disabled) { background: var(--color-kumo-tint); }
+.planner .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .planner .btn.primary {
-  background: var(--forest);
-  border-color: var(--forest);
-  color: white;
+  background: var(--color-kumo-brand);
+  border-color: var(--color-kumo-brand);
+  color: var(--color-kumo-base);
 }
 
-.planner .btn.primary:hover { background: var(--forest-ink); }
-.planner .btn[aria-pressed="true"] { background: var(--forest); border-color: var(--forest); color: white; }
+.planner .btn.primary:hover, .planner .btn.primary:active:not(:disabled) { background: var(--color-kumo-brand-hover); }
+.planner .btn[aria-pressed="true"] { background: var(--color-kumo-brand); border-color: var(--color-kumo-brand); color: var(--color-kumo-base); }
 .planner .btn.icon { width: 40px; padding: 0; }
 
 .planner .card {
-  background: white;
-  border: 1px solid var(--line);
+  background: var(--color-kumo-base);
+  border: 1px solid var(--color-kumo-line);
   border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(28 56 41 / 6%);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -98,36 +100,37 @@
 
 .planner table { width: 100%; border-collapse: collapse; }
 .planner th, .planner td { text-align: left; padding: 12px 16px; vertical-align: top; }
-.planner th { color: var(--muted); font-size: 0.75rem; font-weight: 600; border-bottom: 1px solid var(--line); }
-.planner td { border-top: 1px solid var(--line); font-size: 0.875rem; }
+.planner th { color: var(--text-color-kumo-subtle); font-size: 0.75rem; font-weight: 600; border-bottom: 1px solid var(--color-kumo-line); }
+.planner td { border-top: 1px solid var(--color-kumo-line); font-size: 0.875rem; }
 .planner tr.row { cursor: pointer; }
-.planner tr.row:hover td { background: color-mix(in srgb, var(--cream) 70%, white); }
-.planner .title { font-weight: 600; }
-.planner .desc { color: var(--muted); font-size: 0.75rem; margin-top: 4px; }
-.planner .when { color: var(--muted); font-size: 0.75rem; }
+.planner tr.row:hover td { background: var(--color-kumo-elevated); }
+.planner tr.row:hover :is(.desc, .when) { color: var(--text-color-kumo-default); }
+.planner .desc { color: var(--text-color-kumo-subtle); font-size: 0.75rem; margin-top: 4px; }
+.planner .when { color: var(--text-color-kumo-subtle); font-size: 0.75rem; }
 
 .planner .badge {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 0.75rem;
   font-weight: 600;
-  border: 1px solid var(--line);
-  background: white;
+  border: 1px solid var(--color-kumo-line);
+  background: var(--color-kumo-control);
 }
-.planner .badge.doing { background: #b45309; border-color: #b45309; color: white; }
-.planner .badge.done { background: var(--forest); border-color: var(--forest); color: white; }
-.planner .badge.high { background: color-mix(in srgb, var(--rust) 12%, white); color: var(--rust); border-color: transparent; }
-.planner .badge.urgent { background: #b91c1c; border-color: #b91c1c; color: white; }
+.planner .badge.doing { background: var(--color-kumo-warning-tint); color: var(--text-color-kumo-default); }
+.planner .badge.done { background: var(--color-kumo-success-tint); color: var(--text-color-kumo-default); }
+.planner .badge.high { background: var(--color-kumo-warning-tint); color: var(--text-color-kumo-default); }
+.planner .badge.urgent { background: var(--color-kumo-danger-tint); color: var(--text-color-kumo-default); }
 
-.planner .empty { padding: 28px 16px 32px; text-align: center; color: var(--muted); font-size: 0.875rem; }
-.planner .error { color: var(--rust); font-size: 0.875rem; }
+.planner .empty { padding: 28px 16px 32px; text-align: center; color: var(--text-color-kumo-subtle); font-size: 0.875rem; }
+.planner .error { color: var(--text-color-kumo-default); background: var(--color-kumo-danger-tint); padding: 12px 16px; border-radius: 8px; font-size: 0.875rem; }
 
-.planner .surface { background: white; }
+.planner .surface { background: var(--color-kumo-base); }
 .planner .toolbar {
-  background: color-mix(in srgb, var(--cream) 72%, white);
-  border-bottom: 1px solid var(--line);
+  background: var(--color-kumo-elevated);
+  border-bottom: 1px solid var(--color-kumo-line);
   padding: 12px;
 }
 .planner .range { display: flex; align-items: center; gap: 8px; font-weight: 600; min-width: 0; }
@@ -138,38 +141,38 @@
 .planner .hours { position: relative; }
 .planner .hour {
   height: 48px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
+  border-top: 1px solid var(--color-kumo-line);
+  color: var(--text-color-kumo-subtle);
   font-size: 11px;
   padding: 2px 6px 0 0;
   text-align: right;
 }
-.planner .col { position: relative; border-left: 1px solid var(--line); min-height: 48px; }
-.planner .slot { height: 48px; border-top: 1px solid var(--line); }
-.planner .slot:hover { background: color-mix(in srgb, var(--ochre) 8%, transparent); }
+.planner .col { position: relative; border-left: 1px solid var(--color-kumo-line); min-height: 48px; }
+.planner .slot { height: 48px; border-top: 1px solid var(--color-kumo-line); }
+.planner .slot:hover { background: color-mix(in srgb, var(--color-kumo-warning) 8%, transparent); }
 .planner .allday {
   display: grid;
   grid-template-columns: 56px repeat(7, minmax(0, 1fr));
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--cream) 35%, white);
+  border-bottom: 1px solid var(--color-kumo-line);
+  background: var(--color-kumo-base);
 }
 .planner .allday.day-only { grid-template-columns: 56px minmax(0, 1fr); }
-.planner .allday-label { font-size: 11px; color: var(--muted); padding: 8px 6px 8px 0; text-align: right; }
-.planner .allday-cell { border-left: 1px solid var(--line); padding: 4px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.planner .allday-label { font-size: 11px; color: var(--text-color-kumo-subtle); padding: 8px 6px 8px 0; text-align: right; }
+.planner .allday-cell { border-left: 1px solid var(--color-kumo-line); padding: 4px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .planner .col-head, .planner .weekday {
   text-align: center;
   font-size: 12px;
   padding: 8px 4px;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--cream) 45%, white);
+  border-bottom: 1px solid var(--color-kumo-line);
+  background: var(--color-kumo-elevated);
 }
-.planner .col-head.today, .planner .day.today { background: rgb(200 135 26 / 12%); }
+.planner .col-head.today, .planner .day.today { background: var(--color-kumo-tint); }
 .planner .now {
   position: absolute;
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--rust);
+  background: var(--text-color-kumo-danger);
   pointer-events: none;
   z-index: 2;
 }
@@ -178,9 +181,9 @@
   display: block;
   width: 100%;
   text-align: left;
-  border: 1px solid color-mix(in srgb, var(--forest) 35%, white);
-  background: #e7f0ea;
-  color: var(--forest-ink);
+  border: 1px solid var(--color-kumo-line);
+  background: var(--color-kumo-tint);
+  color: var(--text-color-kumo-default);
   border-radius: 6px;
   padding: 3px 6px;
   font-size: 12px;
@@ -188,30 +191,32 @@
   cursor: pointer;
   overflow: hidden;
 }
+.planner .chip:hover { border-color: var(--color-kumo-brand); }
 .planner .chip.timed {
   position: absolute;
   left: 3px;
   right: 3px;
+  width: auto;
   min-height: 36px;
   z-index: 1;
 }
-.planner .chip.event { background: #f3e4c4; border-color: color-mix(in srgb, var(--ochre) 55%, white); }
-.planner .chip.urgent { background: #f8d7d7; border-color: #e7a3a3; }
-.planner .chip.done { opacity: 0.55; text-decoration: line-through; }
-.planner .chip small { display: block; font-size: 10px; opacity: 0.85; }
+.planner .chip.event { background: var(--color-kumo-warning-tint); }
+.planner .chip.urgent { background: var(--color-kumo-danger-tint); }
+.planner .chip.done { text-decoration: line-through; }
+.planner .chip small { display: block; font-size: 11px; }
 
 .planner .month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .planner .day {
   min-height: 108px;
-  border-top: 1px solid var(--line);
-  border-right: 1px solid var(--line);
+  border-top: 1px solid var(--color-kumo-line);
+  border-right: 1px solid var(--color-kumo-line);
   padding: 4px;
   text-align: left;
-  background: white;
+  background: var(--color-kumo-control);
   cursor: pointer;
 }
 .planner .day:nth-child(7n) { border-right: 0; }
-.planner .day.outside { background: #f7f4ed; color: var(--muted); }
+.planner .day.outside { background: var(--color-kumo-elevated); color: var(--text-color-kumo-default); }
 .planner .date-num { font-size: 12px; }
 .planner .day.today .date-num {
   display: inline-flex;
@@ -220,20 +225,28 @@
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--forest);
-  color: white;
+  background: var(--color-kumo-brand);
+  color: var(--color-kumo-base);
 }
 
 .planner dialog {
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-kumo-line);
   border-radius: 12px;
   padding: 22px;
+  /* Tailwind resets the native dialog margin; restore viewport centering. */
+  position: fixed;
+  inset: 0;
+  margin: auto;
   width: min(560px, calc(100vw - 32px));
-  background: white;
-  color: var(--ink);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  background: var(--color-kumo-control);
+  color: var(--text-color-kumo-default);
 }
-.planner dialog::backdrop { background: rgb(20 42 31 / 45%); }
-.planner dialog h2 { margin: 0 0 16px; font-size: 1.15rem; }
+.planner dialog::backdrop { background: color-mix(in srgb, var(--color-black) 50%, transparent); }
+.planner dialog h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.planner .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.planner dialog .error { margin-bottom: 16px; }
 .planner dialog label { display: block; font-size: 0.75rem; font-weight: 600; margin-bottom: 12px; }
 .planner dialog input,
 .planner dialog textarea,
@@ -241,22 +254,43 @@
   display: block;
   width: 100%;
   margin-top: 4px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-kumo-line);
   border-radius: 8px;
   padding: 8px 10px;
-  background: white;
+  background: var(--color-kumo-control);
+  color: var(--text-color-kumo-default);
+  min-width: 0;
 }
+.planner dialog :is(input, textarea)::placeholder { color: var(--text-color-kumo-default); }
 .planner dialog textarea { min-height: 88px; resize: vertical; }
-.planner .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.planner .grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .planner .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
-.planner .delete { margin-right: auto; color: var(--rust); }
+.planner .delete { margin-right: auto; }
 
-.planner .list-day { padding: 12px 16px; border-top: 1px solid var(--line); }
+.planner .list-day { padding: 12px 16px; border-top: 1px solid var(--color-kumo-line); }
 .planner .list-day h3 { margin: 0 0 8px; font-size: 0.85rem; }
 
 @media (max-width: 800px) {
   .planner { padding: 16px 12px 32px; }
   .planner .hide-sm { display: none; }
   .planner .grid-2 { grid-template-columns: 1fr; }
-  .planner .week { grid-template-columns: 40px repeat(7, minmax(72px, 1fr)); overflow-x: auto; }
+  .planner .time-grid:not(.single) { min-width: 680px; }
+  .planner .planner-head { align-items: flex-start; flex-direction: column; }
+  .planner .month .day { min-height: 80px; }
 }
+
+.planner .planner-filters > select {
+  margin-left: auto;
+  min-height: 40px;
+  border: 1px solid var(--color-kumo-line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--color-kumo-control);
+  color: var(--text-color-kumo-default);
+  font-size: 0.875rem;
+}
+.planner .calendar-scroll { overflow-x: auto; }
+.planner .task-link { text-align: left; font-weight: 600; cursor: pointer; }
+.planner .task-link:hover { text-decoration: underline; }
+.planner .planner-head > div { min-width: 0; }
+.planner h1 { color: var(--text-color-kumo-strong); overflow-wrap: anywhere; }
