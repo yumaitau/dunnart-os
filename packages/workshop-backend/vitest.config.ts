@@ -44,7 +44,7 @@ export default defineConfig({
         compatibilityDate: '2026-09-04',
         // `allow_irrevocable_stub_storage` as in wrangler.jsonc: the user DO persists account stubs.
         compatibilityFlags: ['experimental', 'nodejs_compat', 'allow_irrevocable_stub_storage'],
-        bindings: { PUBLIC_BASE_URL: 'https://workshop.example/' },
+        bindings: { PUBLIC_BASE_URL: 'https://workshop.example/', CHANNEL_ENCRYPTION_KEY: btoa('k'.repeat(32)), SLACK_CHAT_CLIENT_ID: 'fixture', SLACK_CHAT_CLIENT_SECRET: 'fixture-secret', SLACK_CHAT_SIGNING_SECRET: 'fixture-signing', TEAMS_CHAT_APP_ID: 'fixture-app', TEAMS_CHAT_CLIENT_SECRET: 'fixture-secret', TEAMS_CHAT_TENANT_ID: 'fixture-tenant' },
         // The overseer loads gadget code through this, so a test can run a real gadget facet.
         d1Databases: ['AUTH_DB'],
         r2Buckets: ['BACKUPS'],
@@ -53,6 +53,7 @@ export default defineConfig({
           TEST_OVERSEER: { className: 'OverseerDurableObject', useSQLite: true },
           TEST_USER: { className: 'UserDurableObject', useSQLite: true },
           TEST_ADMIN_SETTINGS: { className: 'AdminSettings', useSQLite: true },
+          TEST_CHAT_CHANNELS: { className: 'ChatChannels', useSQLite: true },
           TEST_DEPLOYMENT_BACKUPS: { className: 'DeploymentBackups', useSQLite: true },
           TEST_NATIVE_RECOVERY: { className: 'NativeRecoveryObject', useSQLite: true },
           TEST_RECOVERY_GADGET: { className: 'RecoveryGadgetInspector', useSQLite: true },

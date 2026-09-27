@@ -12,7 +12,7 @@ export interface RecoveryRuntimeIdentity {
   /** Source namespace's original Durable Object ID. */
   originalId: string;
   /** Original namespace owning the recovered root. */
-  kind: "user" | "workspace" | "admin" | "users" | "identities";
+  kind: "user" | "workspace" | "admin" | "users" | "identities" | "channels";
   /** Name-to-ID mappings captured from the source namespace inventory. */
   namedIds: RecoveryNamedIds;
 }
@@ -23,6 +23,7 @@ const namespaceKinds = {
   AdminSettings: "admin",
   UserDirectoryDurableObject: "users",
   IdentityDirectory: "identities",
+  ChatChannels: "channels",
 } as const;
 
 type Kind = RecoveryRuntimeIdentity["kind"];

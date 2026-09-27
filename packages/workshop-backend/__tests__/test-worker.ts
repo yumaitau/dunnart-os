@@ -1,3 +1,4 @@
+export { ChatChannels } from "../src/chat-channels/channels";
 // The Worker the unit suites run inside: the production Worker's exports (so `ctx.exports` resolves
 // the real Durable Objects and callbacks) plus test-only entrypoints that stand in for other Workers.
 

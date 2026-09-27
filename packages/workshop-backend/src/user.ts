@@ -595,6 +595,9 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   /** Validate timezone names before saving account preferences. */
   setTimeZone(timeZone: string): void { this.storage.timeZone.put(normalizeTimeZone(timeZone)); }
 
+  /** Whether background private chat access is allowed after enterprise deprovisioning. */
+  isChatChannelActive(): boolean { return this.storage.created.get() && this.storage.enterpriseAccess.get()?.active !== false; }
+
   /** Like whoami(), but returns null if the account was never initialized. */
   async whoamiIfExists(): Promise<AiChatAuthorInfo | null> {
     if (!this.storage.created.get()) {

@@ -46,7 +46,8 @@
     "./time-zone": {
       "types": "./src/time-zone.ts",
       "import": "./src/time-zone.ts"
-    }
+    },
+    "./chat-channels": "./src/chat-channels.ts"
   },
   "scripts": {
     "build": "tsc",

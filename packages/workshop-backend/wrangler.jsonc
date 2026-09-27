@@ -67,6 +67,10 @@
     {
       "tag": "v5",
       "new_sqlite_classes": [ "DeploymentBackups", "NativeRecoveryObject" ]
+    },
+    {
+      "tag": "v6",
+      "new_sqlite_classes": [ "ChatChannels" ]
     }
   ],
 

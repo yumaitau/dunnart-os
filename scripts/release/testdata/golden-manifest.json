@@ -1138,6 +1138,12 @@
             "NativeRecoveryObject"
           ],
           "tag": "v5"
+        },
+        {
+          "new_sqlite_classes": [
+            "ChatChannels"
+          ],
+          "tag": "v6"
         }
       ],
       "modules": [

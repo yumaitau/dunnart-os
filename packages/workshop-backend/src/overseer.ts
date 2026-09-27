@@ -871,11 +871,13 @@ type ExternalMessageRecord = {
 } & (
   | {
       status: "waiting";
-      chatGatewayRpcTarget: NativeRpcStub<ChatGatewayRpcTarget>;
+      chatGatewayRpcTarget?: NativeRpcStub<ChatGatewayRpcTarget>;
+      channelReplyId?: string;
     }
   | {
       status: "ready";
-      chatGatewayRpcTarget: NativeRpcStub<ChatGatewayRpcTarget>;
+      chatGatewayRpcTarget?: NativeRpcStub<ChatGatewayRpcTarget>;
+      channelReplyId?: string;
       responseText: string;
     }
   | {
@@ -886,7 +888,8 @@ type ExternalMessageRecord = {
 
 type ExternalMessageResponseTargetRegistration = {
   idempotencyKey: string;
-  chatGatewayRpcTarget: NativeRpcStub<ChatGatewayRpcTarget>;
+  chatGatewayRpcTarget?: NativeRpcStub<ChatGatewayRpcTarget>;
+  channelReplyId?: string;
 };
 
 type ExternalMessageResponseTargetRegistrationDecision =
@@ -903,7 +906,8 @@ type ExternalMessageSubmitInput = {
   externalChatKey: string;
   idempotencyKey: string;
   prompt: string;
-  chatGatewayRpcTarget: NativeRpcStub<ChatGatewayRpcTarget>;
+  chatGatewayRpcTarget?: NativeRpcStub<ChatGatewayRpcTarget>;
+  channelReplyId?: string;
   title: string;
 };
 
@@ -1950,7 +1954,7 @@ class OverseerImpl implements AgentHooks {
   #deleteExternalMessageResponseDeliveryRecord(record: ExternalMessageRecord): void {
     this.storage.gadgetResponseDeliveries.delete(record.idempotencyKey);
     if (record.status !== "delivered") {
-      record.chatGatewayRpcTarget[Symbol.dispose]();
+      record.chatGatewayRpcTarget?.[Symbol.dispose]();
     }
   }
 
@@ -6789,6 +6793,7 @@ class OverseerImpl implements AgentHooks {
           chatId,
           promptSequence,
           responseTargetRegistration.chatGatewayRpcTarget,
+          responseTargetRegistration.channelReplyId,
         );
       }
       if (externalChatKey) {
@@ -6867,6 +6872,7 @@ class OverseerImpl implements AgentHooks {
           chatId,
           promptSequence,
           responseTargetRegistration.chatGatewayRpcTarget,
+          responseTargetRegistration.channelReplyId,
         );
       }
     });
@@ -6888,23 +6894,25 @@ class OverseerImpl implements AgentHooks {
     idempotencyKey: string,
     chatId: number,
     promptSequence: number,
-    chatGatewayRpcTarget: NativeRpcStub<ChatGatewayRpcTarget>,
+    chatGatewayRpcTarget: NativeRpcStub<ChatGatewayRpcTarget> | undefined,
+    channelReplyId?: string,
   ): void {
+    if (!chatGatewayRpcTarget && !channelReplyId) throw new Error("Missing external reply destination.");
     if (this.storage.gadgetResponseDeliveries.undeliveredByChatId.get(chatId)) {
       throw new Error("This chat already has an undelivered workspace response target.");
     }
-    chatGatewayRpcTarget = chatGatewayRpcTarget.dup();
+    chatGatewayRpcTarget = chatGatewayRpcTarget?.dup();
     try {
       this.storage.gadgetResponseDeliveries.put({
         idempotencyKey,
         chatId,
         promptSequence,
-        chatGatewayRpcTarget,
+        chatGatewayRpcTarget, channelReplyId,
         createdAt: Date.now(),
         status: "waiting",
       });
     } catch (err) {
-      chatGatewayRpcTarget[Symbol.dispose]();
+      chatGatewayRpcTarget?.[Symbol.dispose]();
       throw err;
     }
   }
@@ -6974,9 +6982,12 @@ class OverseerImpl implements AgentHooks {
     if (record.status !== "ready") return;
 
     try {
-      await record.chatGatewayRpcTarget.onGadgetResponse({
-        text: record.responseText,
-      });
+      if (record.channelReplyId) {
+        if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Channel replies are paused during recovery.");
+        await this.ctx.exports.ChatChannels.getByName("").complete(record.channelReplyId, record.responseText, this.ctx.id.toString());
+      } else if (record.chatGatewayRpcTarget) {
+        await record.chatGatewayRpcTarget.onGadgetResponse({ text: record.responseText });
+      } else throw new Error("Missing external reply destination.");
     } catch (err) {
       this.logger.error("failed to deliver external message response", {
         event: "external.message.response.delivery.failed",
@@ -6993,7 +7004,7 @@ class OverseerImpl implements AgentHooks {
       createdAt: record.createdAt,
       deliveredAt: Date.now(),
     });
-    record.chatGatewayRpcTarget[Symbol.dispose]();
+    record.chatGatewayRpcTarget?.[Symbol.dispose]();
   }
 
   async deliverReadyExternalMessageResponses(): Promise<void> {
@@ -10175,6 +10186,20 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
     return externalChat;
   }
 
+  /** Channel adapters may use only explicitly paired workspaces owned by the authenticated user. */
+  async isChatChannelOwner(userId: string): Promise<boolean> {
+    return this.impl.ownerId === userId && !this.impl.storage.containsRestrictedData.get() &&
+      await this.impl.users.get(this.impl.users.idFromString(userId)).isChatChannelActive();
+  }
+
+  /** Submit a verified private conversation using the existing durable external-turn machinery. */
+  async receivePairedChannelMessage(userId: string, linkId: string, messageId: string, prompt: string): Promise<SubmitExternalMessageResult> {
+    if (!await this.isChatChannelOwner(userId)) return {accepted:false,message:"Workspace access is no longer available."};
+    const profile = await this.impl.users.get(this.impl.users.idFromString(userId)).whoami();
+    return this.receiveExternalMessage({ callerEmail:profile.id, externalChatKey:`channel:${linkId}`,
+      idempotencyKey:`channel:${messageId}`, channelReplyId:messageId, prompt, title:"Private chat" });
+  }
+
   async receiveExternalMessage(
     input: ExternalMessageSubmitInput,
   ): Promise<SubmitExternalMessageResult> {
@@ -10301,7 +10326,7 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
     // Submit the prompt to the existing external chat, or start a new external chat.
     let responseTargetRegistration: ExternalMessageResponseTargetRegistration = {
       idempotencyKey: input.idempotencyKey,
-      chatGatewayRpcTarget: input.chatGatewayRpcTarget,
+      chatGatewayRpcTarget: input.chatGatewayRpcTarget, channelReplyId: input.channelReplyId,
     };
     let chatId: number;
     if (externalChat) {

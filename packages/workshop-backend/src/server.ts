@@ -1,3 +1,6 @@
+import type { ChatChannelProvider, ChatChannelStatus, ChatChannelPairing } from "@gadgets/workshop-shared/chat-channels";
+import { handleChatChannelRequest } from "./chat-channels/http";
+export { ChatChannels } from "./chat-channels/channels";
 import type { DeploymentBackupEnv } from "./deployment-backup-contract";
 import { trackDeploymentContext, withDeploymentAdmission, registerDeploymentRpc, guardDeploymentRpc, MAINTENANCE_MESSAGE } from "./deployment-admission";
 import { RpcStub, RpcTarget, newHttpBatchRpcResponse, newWebSocketRpcSession, RpcSessionOptions } from "capnweb";
@@ -154,6 +157,12 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
   setOwnDisplayName(name: string): Promise<void> {
     return this.#user.setOwnDisplayName(name);
   }
+
+  getChatChannelStatus(): Promise<ChatChannelStatus> { return this.ctx.exports.ChatChannels.getByName("").status(this.#userId.toString()); }
+  pairChatChannel(provider: ChatChannelProvider, workspaceId: string): Promise<ChatChannelPairing> {
+    return this.ctx.exports.ChatChannels.getByName("").pair(this.#userId.toString(), provider, workspaceId);
+  }
+  unlinkChatChannel(id: string): Promise<void> { return this.ctx.exports.ChatChannels.getByName("").unlink(this.#userId.toString(), id); }
 
   getTimeZone(): Promise<string> { return this.#user.getTimeZone(); }
   setTimeZone(timeZone: string): Promise<void> { return this.#user.setTimeZone(timeZone); }
@@ -906,6 +915,9 @@ export default {
 async function dispatchRequest(req: Request, env: Env, ctx: ExecutionContext) {
     let url = new URL(req.url);
 
+    if (url.pathname.startsWith("/api/chat-channels/")) {
+      return handleChatChannelRequest(req, env, ctx.exports.ChatChannels.getByName(""));
+    }
     if (url.pathname === "/api/scim/v2" || url.pathname.startsWith("/api/scim/v2/")) {
       return ctx.exports.IdentityDirectory.getByName("").fetch(req);
     }

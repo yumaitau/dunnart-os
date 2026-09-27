@@ -167,6 +167,7 @@ export function createDeploymentRecovery(env: RecoveryEnv, exports: Cloudflare.E
     { id: "root-admin", object: exports.AdminSettings.getByName("") },
     { id: "root-users", object: exports.UserDirectoryDurableObject.getByName("") },
     { id: "root-identities", object: exports.IdentityDirectory.getByName("") },
+    ...(exports.ChatChannels ? [{ id: "root-channels", object: exports.ChatChannels.getByName("") }] : []),
   ];
   const stores = (): RecoverySource[] => [kvRecoverySource("kv-blueprints", env.BLUEPRINTS),
     kvRecoverySource("kv-avatars", env.AVATARS), r2RecoverySource("r2-blueprints", env.BLUEPRINT_CONTENT),

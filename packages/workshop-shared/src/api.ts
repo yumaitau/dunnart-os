@@ -1,3 +1,4 @@
+import type { ChatChannelProvider, ChatChannelStatus, ChatChannelPairing } from "./chat-channels";
 import type { BackupSchedule, BackupStatus, BackupVerification, BackupRestorePreview, BackupRestoreStage } from "./deployment-backups";
 // This file defines the API spoken between the Gadgets Workshop service and the front-end UI.
 //
@@ -421,6 +422,13 @@ export interface AuthenticatedApi extends RpcTarget {
 
   /** Read this account's IANA timezone; unconfigured accounts default to Australia/Sydney. */
   getTimeZone(): Promise<string>;
+
+  /** List configured chat providers and this account's private conversation links. */
+  getChatChannelStatus(): Promise<ChatChannelStatus>;
+  /** Create a ten-minute single-use pairing command for an owned workspace. */
+  pairChatChannel(provider: ChatChannelProvider, workspaceId: string): Promise<ChatChannelPairing>;
+  /** Revoke a private conversation link owned by this account, cancelling queued replies. */
+  unlinkChatChannel(id: string): Promise<void>;
   /** Save this account's timezone for product dates and agent scheduling context. */
   setTimeZone(timeZone: string): Promise<void>;
 

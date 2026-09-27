@@ -131,7 +131,7 @@ export class NativeRecoveryObject extends DurableObject<Cloudflare.Env, { descri
     }
     const snapshot: NativeRecoverySnapshot = JSON.parse(await this.getRecoverySnapshot(service));
     const kind = sourceId.startsWith("user-") ? "user" : sourceId.startsWith("workspace-") ? "workspace"
-      : sourceId === "root-admin" ? "admin" : sourceId === "root-users" ? "users" : sourceId === "root-identities" ? "identities" : undefined;
+      : sourceId === "root-admin" ? "admin" : sourceId === "root-users" ? "users" : sourceId === "root-identities" ? "identities" : sourceId === "root-channels" ? "channels" : undefined;
     if (!kind) throw new Error("Unsupported recovery runtime component.");
     const identity: RecoveryRuntimeIdentity = { sourceId, scope, kind, originalId: snapshot.id, namedIds: JSON.parse(routing) };
     const codec = this.#runtimeCodec(identity, service);
@@ -174,7 +174,7 @@ export class NativeRecoveryObject extends DurableObject<Cloudflare.Env, { descri
       return { namespace: "UserDurableObject", name: profile.id, originalId };
     }
     const namespace = sourceId === "root-admin" ? "AdminSettings" : sourceId === "root-users" ? "UserDirectoryDurableObject"
-      : sourceId === "root-identities" ? "IdentityDirectory" : undefined;
+      : sourceId === "root-identities" ? "IdentityDirectory" : sourceId === "root-channels" ? "ChatChannels" : undefined;
     return namespace ? { namespace, name: "", originalId } : null;
   }
 
@@ -194,7 +194,7 @@ export class NativeRecoveryObject extends DurableObject<Cloudflare.Env, { descri
 
   #runtimeFacet(identity: RecoveryRuntimeIdentity) {
     const classes = { user: this.ctx.exports.UserDurableObject, workspace: this.ctx.exports.OverseerDurableObject,
-      admin: this.ctx.exports.AdminSettings, users: this.ctx.exports.UserDirectoryDurableObject, identities: this.ctx.exports.IdentityDirectory };
+      admin: this.ctx.exports.AdminSettings, users: this.ctx.exports.UserDirectoryDurableObject, identities: this.ctx.exports.IdentityDirectory, channels: this.ctx.exports.ChatChannels };
     return this.ctx.facets.get(".runtime", () => ({ class: classes[identity.kind], id: identity.originalId }));
   }
 

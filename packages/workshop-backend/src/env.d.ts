@@ -1,3 +1,4 @@
+import type { ChannelEnv } from "./chat-channels/providers";
 import type { ProductAnalyticsRecord } from "./analytics";
 
 // Custom environment variable declarations that augment the auto-generated Cloudflare.Env.
@@ -5,7 +6,7 @@ import type { ProductAnalyticsRecord } from "./analytics";
 
 declare global {
   namespace Cloudflare {
-    interface Env {
+    interface Env extends ChannelEnv {
       // Deployment-wide admin usernames: a JSON binding, or the same array as a JSON string
       // (which is what a secret binding, can carry).
       ADMINS?: string[] | string;
