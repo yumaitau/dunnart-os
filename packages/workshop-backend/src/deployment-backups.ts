@@ -26,6 +26,7 @@ export class DeploymentBackups extends DurableObject<DeploymentBackupEnv> {
     });
     ctx.blockConcurrencyWhile(async () => {
       this.state = await ctx.storage.get<State>("backups") ?? this.state;
+      this.state.schedule = validateBackupSchedule(this.state.schedule);
     });
   }
 
@@ -170,7 +171,7 @@ export class DeploymentBackups extends DurableObject<DeploymentBackupEnv> {
     });
   }
 
-  /** Persist a validated UTC schedule and ensure the durable alarm follows it. */
+  /** Persist a validated timezone-aware schedule and ensure the durable alarm follows it. */
   setBackupSchedule(schedule: BackupSchedule): Promise<BackupStatus> {
     return this.serialize(async () => {
       this.state.schedule = validateBackupSchedule(schedule);

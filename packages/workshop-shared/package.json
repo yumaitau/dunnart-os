@@ -42,6 +42,10 @@
     "./deployment-backups": {
       "types": "./src/deployment-backups.ts",
       "import": "./src/deployment-backups.ts"
+    },
+    "./time-zone": {
+      "types": "./src/time-zone.ts",
+      "import": "./src/time-zone.ts"
     }
   },
   "scripts": {

@@ -154,6 +154,9 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
   setOwnDisplayName(name: string): Promise<void> {
     return this.#user.setOwnDisplayName(name);
   }
+
+  getTimeZone(): Promise<string> { return this.#user.getTimeZone(); }
+  setTimeZone(timeZone: string): Promise<void> { return this.#user.setTimeZone(timeZone); }
   async searchUsers(query: string, excludeIds: string[]): Promise<UserDirectoryRecord[]> {
     if (!(await this.#userSearchEnabled())) return [];
     return retryOnDoReset(() => this.ctx.exports.UserDirectoryDurableObject.getByName("")

@@ -8853,7 +8853,9 @@ class OverseerImpl implements AgentHooks {
   async getInstanceInstructions(): Promise<string> {
     try {
       // Cheap single KV get from the mirror AdminSettings maintains; avoids the singleton DO.
-      return (await readAdminConfig(this.env)).instanceInstructions;
+      const [config, timeZone] = await Promise.all([readAdminConfig(this.env), this.#ownerUserStub().getTimeZone()]);
+      const localTime = new Intl.DateTimeFormat("en-AU", { timeZone, dateStyle: "full", timeStyle: "long" }).format(new Date());
+      return `${config.instanceInstructions}\n\nWorkspace owner's configured timezone: ${timeZone}. Current local time: ${localTime}. Use this timezone for calendar and scheduled tasks unless the user specifies another.`;
     } catch (err) {
       this.logger.warn("failed to read instance instructions", {
         event: "instance.instructions.read.failed", error: err,

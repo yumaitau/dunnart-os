@@ -1051,6 +1051,9 @@ importers:
       pako:
         specifier: ^2.1.0
         version: 2.2.0
+      temporal-polyfill:
+        specifier: 1.0.2
+        version: 1.0.2
       yjs:
         specifier: ^13.6.32
         version: 13.6.32

@@ -419,6 +419,11 @@ export interface AuthenticatedApi extends RpcTarget {
   /** Set the user's own display name, seen in chats, etc. */
   setOwnDisplayName(name: string): Promise<void>;
 
+  /** Read this account's IANA timezone; unconfigured accounts default to Australia/Sydney. */
+  getTimeZone(): Promise<string>;
+  /** Save this account's timezone for product dates and agent scheduling context. */
+  setTimeZone(timeZone: string): Promise<void>;
+
   /**
    * Find other users of this deployment by a case-insensitive substring of
    * their display name or id, for inviting collaborators. Excludes the caller

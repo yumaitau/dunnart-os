@@ -1,13 +1,15 @@
-/** UTC schedule for complete deployment archives. */
+/** Wall-clock schedule for complete deployment archives in an explicit IANA timezone. */
 export interface BackupSchedule {
   /** Whether automatic capture is enabled. */
   enabled: boolean;
-  /** How often the scheduled UTC time occurs. */
+  /** How often the scheduled local time occurs. */
   frequency: "daily" | "weekly";
-  /** UTC hour, from 0 through 23. */
-  hourUtc: number;
-  /** UTC weekday for weekly schedules, from 0 (Sunday) through 6 (Saturday). */
-  weekdayUtc: number;
+  /** IANA timezone; new schedules default to Australia/Sydney. */
+  timeZone: string;
+  /** Local hour, from 0 through 23. Missing daylight-saving hours run after the clock change. */
+  hour: number;
+  /** Local weekday for weekly schedules, from 0 (Sunday) through 6 (Saturday). */
+  weekday: number;
   /** Successful archives to retain, from 1 through 100; latest verified archive is protected. */
   retention: number;
 }

@@ -1,4 +1,5 @@
 import { RpcStub } from "capnweb";
+import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@gadgets/workshop-shared/time-zone";
 import { GadgetMetadataWithTimestamps, AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS, CollaboratorRole, ConnectedAccountsSubscriber, ConnectedAccountsFilter, GatekeeperVendorFilter, GadgetMetadata, BlueprintMetadata, BlueprintLibrarySummary, BlueprintSource, BlueprintUserSummary, BLUEPRINT_SCREENSHOT_R2_PREFIX, GatekeeperVendorInfo, BlueprintOutput, OutputSummary, WorkpieceId, ListOutputsResult, AUTH_ERROR_CODES, createAuthError, ConnectFlowStart, isMcpVendorId } from '@gadgets/workshop-shared/api';
 import { Gatekeeper, GatekeeperUser, GatekeeperUserVerifier, GatekeeperVendor, AccountDescription, VendorDescription, GatekeeperConnectCallback, ConnectHandoff, SupportedResource, ResourceConfiguratorFrame, AppUiContext, GatekeeperUiFrame } from "@gadgets/workshop-shared/gatekeeper";
 import { shouldAutoProvisionAccount, ambientGatekeeperMode } from "./provisioning-policy.js";
@@ -234,6 +235,7 @@ function makeUserStorage(storage: DurableObjectStorage) {
         id: "user@example.com",
       },
       quickModel: <string | null>null,
+      timeZone: DEFAULT_TIME_ZONE,
       preferredModel: <string | null>null,
       onboardingCompleted: false,
 
@@ -586,6 +588,12 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
   async whoami(): Promise<AiChatAuthorInfo> {
     return this.storage.profile.get();
   }
+
+  /** Read the owner's persistent timezone preference. */
+  getTimeZone(): string { return this.storage.timeZone.get(); }
+
+  /** Validate timezone names before saving account preferences. */
+  setTimeZone(timeZone: string): void { this.storage.timeZone.put(normalizeTimeZone(timeZone)); }
 
   /** Like whoami(), but returns null if the account was never initialized. */
   async whoamiIfExists(): Promise<AiChatAuthorInfo | null> {
