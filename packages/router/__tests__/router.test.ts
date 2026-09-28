@@ -140,3 +140,24 @@ describe('wrangler.jsonc contract', () => {
     });
   });
 });
+
+describe('branded browser errors', () => {
+  const missing = { fetch: async () => new Response('missing', {status:404}) };
+  const assets = { fetch: async () => new Response('<html>Dunnart app shell</html>', {headers:{'content-type':'text/html'}}) };
+  it('serves the themed application for browser 404s without changing the error status', async () => {
+    const env = makeEnv({ASSETS: assets, WORKSHOP_BACKEND: missing, GATEKEEPER_CONTEXT: missing});
+    for (const path of ['/api/missing','/gatekeeper/context/missing']) {
+      const response = await router.fetch!(new Request(`https://example.com${path}`, {headers:{accept:'text/html'}}),env,{} as ExecutionContext);
+      expect(response.status).toBe(404);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.text()).toContain('Dunnart app shell');
+    }
+  });
+  it('preserves machine-readable error bodies and never substitutes HTML for missing assets', async () => {
+    const env=makeEnv({ASSETS: missing, WORKSHOP_BACKEND: missing});
+    for (const path of ['/api/missing','/assets/missing.js']) {
+      const response=await router.fetch!(new Request(`https://example.com${path}`),env,{} as ExecutionContext);
+      expect(response.status).toBe(404);expect(await response.text()).toBe('missing');
+    }
+  });
+});

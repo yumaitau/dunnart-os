@@ -21,6 +21,18 @@ export interface Env {
   [key: string]: unknown;
 }
 
+// Browser navigations get the application's themed missing-page view. RPC, assets and
+// machine-readable API errors retain their original body and status.
+async function browserNotFound(req: Request, env: Env, response: Response): Promise<Response> {
+  if (response.status !== 404 || !env.ASSETS || !["GET", "HEAD"].includes(req.method) ||
+      !req.headers.get("accept")?.includes("text/html")) return response;
+  const shell = await env.ASSETS.fetch(new Request(new URL("/index.html", req.url), { headers: { accept: "text/html" } }));
+  if (!shell.ok || !shell.headers.get("content-type")?.includes("text/html")) return response;
+  const headers = new Headers(shell.headers);
+  headers.set("Cache-Control", "no-store");
+  return new Response(req.method === "HEAD" ? null : shell.body, {status: 404, headers});
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -30,14 +42,14 @@ export default {
       const suffix = key.slice("GATEKEEPER_".length).toLowerCase().replaceAll("_", "-");
       const prefix = `/gatekeeper/${suffix}`;
       if (url.pathname === prefix || url.pathname.startsWith(prefix + "/")) {
-        return (env[key] as Fetcher).fetch(req);
+        return browserNotFound(req, env, await (env[key] as Fetcher).fetch(req));
       }
     }
 
     if (url.pathname === "/api" || url.pathname.startsWith("/api/") ||
         url.pathname === "/blueprint-screenshot" ||
         url.pathname.startsWith("/blueprint-screenshot/")) {
-      return env.WORKSHOP_BACKEND.fetch(req);
+      return browserNotFound(req, env, await env.WORKSHOP_BACKEND.fetch(req));
     }
 
     // Note: gatekeeper OAuth redirects land on the gatekeeper Workers themselves, at
@@ -45,7 +57,7 @@ export default {
     // callbacks.
 
     if (env.ASSETS) {
-      return env.ASSETS.fetch(req);
+      return browserNotFound(req, env, await env.ASSETS.fetch(req));
     }
 
     // Dev only: with no assets binding here, everything else goes to the backend.
@@ -56,7 +68,7 @@ export default {
     // expected here -- run the Vite dev server with `pnpm dev-client` and open localhost:3000
     // directly instead. (We don't try to forward to localhost:3000 becaues it doesn't work well:
     // Vite's HMR socket gets disconnected every time wrangler restarts workerd.)
-    return env.WORKSHOP_BACKEND.fetch(req);
+    return browserNotFound(req, env, await env.WORKSHOP_BACKEND.fetch(req));
   },
 
   async email(message, env) {
