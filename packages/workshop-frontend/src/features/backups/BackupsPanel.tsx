@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DEFAULT_TIME_ZONE } from '@gadgets/workshop-shared/time-zone'
-import { Button } from '@cloudflare/kumo'
+import { Button, useKumoToastManager } from '@cloudflare/kumo'
 import { BackupScheduleForm } from './BackupScheduleForm'
 import { BackupRestorePanel } from './BackupRestorePanel'
 import type { BackupsApi, BackupStatus, RestorePreview } from './backupTypes'
@@ -8,6 +8,7 @@ import type { BackupsApi, BackupStatus, RestorePreview } from './backupTypes'
 
 
 export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
+  const toasts = useKumoToastManager()
   const [status, setStatus] = useState<BackupStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -60,9 +61,10 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
       const message = await action(() => current === lifecycle.current)
       if (current !== lifecycle.current) return
       setNotice(message)
+      if (message) toasts.add({title: message, variant: 'success'})
       await refresh()
     } catch (failure) {
-      if (current === lifecycle.current) setError(failure instanceof Error ? failure.message : 'Backup operation failed.')
+      if (current === lifecycle.current) { setError(failure instanceof Error ? failure.message : 'Backup operation failed.'); toasts.add({title: 'Backup operation failed.', variant: 'error'}) }
     } finally {
       if (current === lifecycle.current) { operationPending.current = false; setBusy(false) }
     }

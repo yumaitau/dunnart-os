@@ -1,3 +1,4 @@
+import DeleteConfirmationDialog from '../components/DeleteConfirmationDialog'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect, useRef } from 'react'
 import { DropdownMenu, useKumoToastManager } from '@cloudflare/kumo'
@@ -142,6 +143,7 @@ function ProvidersPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<AiChatAuthorInfo | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const fetchAll = async () => {
@@ -174,10 +176,11 @@ function ProvidersPage() {
   }
 
   const handleDelete = async (model: AiChatAuthorInfo) => {
-    if (!confirm(`Delete "${model.name}"? This cannot be undone.`)) return
     setDeletingId(model.id)
     try {
       await authenticatedApi.deleteModel(model.id)
+      setDeleteTarget(null)
+      toasts.add({ title: 'Provider deleted.', variant: 'success' })
       await fetchAll()
     } catch (err) {
       console.error('Failed to delete model:', err)
@@ -315,7 +318,7 @@ function ProvidersPage() {
                 model={model}
                 isQuick={quickModel === model.id}
                 isBuiltIn={isBuiltIn(model.id)}
-                onDelete={() => handleDelete(model)}
+                onDelete={() => setDeleteTarget(model)}
                 onSetQuick={() => handleSetQuick(model.id)}
               />
             </div>
@@ -323,6 +326,10 @@ function ProvidersPage() {
         )}
       </div>
 
+      <DeleteConfirmationDialog open={deleteTarget !== null} title="Delete provider?"
+        description={<>This removes {deleteTarget?.name}. You cannot undo this.</>}
+        isDeleting={deletingId !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+        onConfirm={() => { if (deleteTarget) void handleDelete(deleteTarget) }} />
       {/* Add model dialog */}
       <AddModelModal
         visible={sheetOpen}

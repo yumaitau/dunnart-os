@@ -1,4 +1,6 @@
-import { useEffect, useId, useRef } from "react";
+import { useState } from "react";
+import { Dialog } from "@cloudflare/kumo";
+import DeleteConfirmationDialog from "../../components/DeleteConfirmationDialog";
 import { X } from "@phosphor-icons/react";
 import type { PlannerEvent, PlannerTask, TaskPriority, TaskStatus } from "./plannerTypes";
 
@@ -34,35 +36,20 @@ export const TaskDialog = ({
   onSaveEvent,
   onDeleteEvent,
 }: Props) => {
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (editor && !dialog.open) dialog.showModal();
-    if (!editor && dialog.open) dialog.close();
-  }, [editor]);
-
-  if (!editor) return <dialog ref={ref} />;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  if (!editor) return null;
 
   const heading = editor.kind === "task"
     ? (editor.task ? "Task details" : "New task")
     : (editor.event ? "Event details" : "New event");
 
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-      onClose={onClose}
-    >
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
+    <Dialog className="planner planner-dialog responsive-dialog" size="base">
       <div className="dialog-heading">
-        <h2 id={titleId}>{heading}</h2>
-        <button type="button" className="btn icon" aria-label="Close dialog" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+        <Dialog.Title render={<h2 />}>{heading}</Dialog.Title>
+        <Dialog.Description className="sr-only">Edit the details, then save your changes.</Dialog.Description>
+        <button type="button" className="btn icon" aria-label="Close dialog" disabled={pending} onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
       {error && <p className="error" role="alert">{error}</p>}
       {editor.kind === "task" ? (
@@ -123,12 +110,12 @@ export const TaskDialog = ({
                 type="button"
                 className="btn delete"
                 disabled={pending}
-                onClick={() => { void onDeleteTask(editor.task!.id).then((saved) => { if (saved) onClose(); }); }}
+                onClick={() => setConfirmDelete(true)}
               >
                 Delete
               </button>
             )}
-            <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn" disabled={pending} onClick={onClose}>Cancel</button>
             <button type="submit" className="btn primary" disabled={pending}>{pending ? "Saving…" : "Save task"}</button>
           </div>
         </form>
@@ -171,16 +158,27 @@ export const TaskDialog = ({
                 type="button"
                 className="btn delete"
                 disabled={pending}
-                onClick={() => { void onDeleteEvent(editor.event!.id).then((saved) => { if (saved) onClose(); }); }}
+                onClick={() => setConfirmDelete(true)}
               >
                 Delete
               </button>
             )}
-            <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn" disabled={pending} onClick={onClose}>Cancel</button>
             <button type="submit" className="btn primary" disabled={pending}>{pending ? "Saving…" : "Save event"}</button>
           </div>
         </form>
       )}
-    </dialog>
+      <DeleteConfirmationDialog open={confirmDelete}
+        title={editor.kind === "task" ? "Delete task?" : "Delete event?"}
+        description={<>This permanently removes {editor.kind === "task" ? editor.task?.title : editor.event?.title}. You cannot undo this.{error && <span className="block" role="alert">{error}</span>}</>}
+        isDeleting={pending} onOpenChange={setConfirmDelete}
+        onConfirm={async () => {
+          const deleted = editor.kind === "task"
+            ? editor.task && await onDeleteTask(editor.task.id)
+            : editor.event && await onDeleteEvent(editor.event.id);
+          if (deleted) { setConfirmDelete(false); onClose(); }
+        }} />
+    </Dialog>
+    </Dialog.Root>
   );
 };

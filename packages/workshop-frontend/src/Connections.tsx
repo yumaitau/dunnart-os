@@ -1,3 +1,4 @@
+import DeleteConfirmationDialog from './components/DeleteConfirmationDialog'
 import { useState, useEffect, useMemo } from 'react'
 import { Dialog, Tooltip, useKumoToastManager } from '@cloudflare/kumo'
 import {
@@ -50,6 +51,7 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
   const [editingBinding, setEditingBinding] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [isNewConnectionModalVisible, setIsNewConnectionModalVisible] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ name: string; resourceTitle: string } | null>(null)
   const [deleteHookTarget, setDeleteHookTarget] = useState<{ id: number; title: string } | null>(null)
   const [togglingHooks, setTogglingHooks] = useState<Set<number>>(new Set())
@@ -110,13 +112,17 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
 
   const handleDeleteHookConfirm = async () => {
     if (!deleteHookTarget) return
+    if (deleting) return
+    setDeleting(true)
     try {
       await overseer.deleteHook(deleteHookTarget.id)
       await loadGatekeepers()
+      toasts.add({ title: "Hook deleted.", variant: "success" })
     } catch (err) {
       console.error('Failed to delete hook:', err)
       toasts.add({ title: 'Failed to delete hook', variant: 'error' })
     } finally {
+      setDeleting(false)
       setDeleteHookTarget(null)
     }
   }
@@ -190,14 +196,18 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return
+    if (deleting) return
+    setDeleting(true)
     try {
       await gadget.unbind(deleteTarget.name)
       await loadGatekeepers()
+      toasts.add({ title: "Connection removed.", variant: "success" })
       onConnectionsChange?.()
     } catch (err) {
       console.error('Failed to remove binding:', err)
       toasts.add({ title: 'Failed to remove connection', variant: 'error' })
     } finally {
+      setDeleting(false)
       setDeleteTarget(null)
     }
   }
@@ -239,7 +249,6 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
             <div className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
               {bindings.map((gk, index) => {
                 const isEditing = editingBinding === gk.name
-                const isDeleting = deleteTarget?.name === gk.name
                 // Still provisional to the open chat (see GadgetBindingInfo.chatId). Blueprint
                 // annotations are excluded, since a blueprint only ever exports permanent edges.
                 const isPending = gk.chatId !== undefined
@@ -247,32 +256,9 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
                 return (
                   <div
                     key={gk.name}
-                    className={`px-3 py-3 ${index > 0 ? 'border-t border-kumo-line' : ''} ${isDeleting ? 'bg-kumo-danger-tint/40' : ''}`}
+                    className={`px-3 py-3 ${index > 0 ? 'border-t border-kumo-line' : ''}`}
                   >
-                    {isDeleting ? (
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] leading-[18px] font-medium tracking-[-0.25px] text-kumo-danger">
-                            Delete {gk.resourceTitle}?
-                          </p>
-                          <p className="truncate text-[12px] leading-4 font-normal tracking-[-0.2px] text-kumo-subtle">
-                            The binding <span className="font-mono">{gk.name}</span> will be removed from this gadget.
-                          </p>
-                        </div>
-                        <WorkshopButton
-                          tone="danger"
-                          className="min-w-[68px]"
-                          onClick={handleDeleteConfirm}
-                        >
-                          Delete
-                        </WorkshopButton>
-                        <WorkshopButton
-                          onClick={() => setDeleteTarget(null)}
-                        >
-                          Cancel
-                        </WorkshopButton>
-                      </div>
-                    ) : isEditing ? (
+                    {isEditing ? (
                       <div className="flex items-center gap-2">
                         <WorkshopInput
                           value={editValue}
@@ -374,39 +360,14 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
 
             <div className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
               {hooks.map((hook, index) => {
-                const isDeleting = deleteHookTarget?.id === hook.id
                 const vendorId = bindings.find((b) => b.target === hook.gatekeeperId)?.vendorId
 
                 return (
                   <div
                     key={hook.id}
-                    className={`px-3 py-3 ${index > 0 ? 'border-t border-kumo-line' : ''} ${isDeleting ? 'bg-kumo-danger-tint/40' : ''}`}
+                    className={`px-3 py-3 ${index > 0 ? 'border-t border-kumo-line' : ''}`}
                   >
-                    {isDeleting ? (
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] leading-[18px] font-medium tracking-[-0.25px] text-kumo-danger">
-                            Delete hook "{hook.description.title}"?
-                          </p>
-                          <p className="truncate text-[12px] leading-4 font-normal tracking-[-0.2px] text-kumo-subtle">
-                            This permanently removes the hook. Future events will stop being delivered.
-                          </p>
-                        </div>
-                        <WorkshopButton
-                          tone="danger"
-                          className="min-w-[68px]"
-                          onClick={handleDeleteHookConfirm}
-                        >
-                          Delete
-                        </WorkshopButton>
-                        <WorkshopButton
-                          onClick={() => setDeleteHookTarget(null)}
-                        >
-                          Cancel
-                        </WorkshopButton>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3">
                         <GatekeeperIcon
                           vendorId={vendorId}
                           fallbackText={hook.resourceTitle}
@@ -443,8 +404,7 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
                             </WorkshopIconButton>
                           </Tooltip>
                         </div>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 )
               })}
@@ -477,6 +437,11 @@ export default function Connections({ overseer, gadget, chatId, authenticatedApi
         }}
       />
 
+      <DeleteConfirmationDialog open={deleteTarget !== null || deleteHookTarget !== null}
+        title={deleteHookTarget ? "Delete hook?" : "Remove connection?"}
+        description={deleteHookTarget ? "Future events will stop being delivered. You cannot undo this." : <>Remove {deleteTarget?.resourceTitle} from this gadget? Existing data remains with the provider.</>}
+        isDeleting={deleting} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteHookTarget(null) } }}
+        onConfirm={deleteHookTarget ? handleDeleteHookConfirm : handleDeleteConfirm} />
       <BlueprintAnnotationModal
         target={annotationTarget}
         gadget={gadget}

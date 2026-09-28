@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { Button, Input } from '@cloudflare/kumo'
+import { Button, Input, useKumoToastManager } from '@cloudflare/kumo'
 import { authClient } from './authClient'
 import { useServerConfig, useSiteName } from '../../ServerConfigContext'
 
 export const BetterLogin = () => {
+  const toasts = useKumoToastManager()
   const config = useServerConfig()
   const siteName = useSiteName()
   const migrating = config?.accessMigrationEnabled === true && new URLSearchParams(window.location.search).has('migrate')
@@ -16,7 +17,7 @@ export const BetterLogin = () => {
   const [error, setError] = useState<string | null>(null)
   const run = async (action: () => Promise<void>) => {
     setBusy(true); setError(null)
-    try { await action() } catch (err) { setError(err instanceof Error ? err.message : 'Sign-in failed.') }
+    try { await action() } catch (err) { const message = err instanceof Error ? err.message : 'Sign-in failed.'; setError(message); toasts.add({title: 'Sign-in failed', description: message, variant: 'error'}) }
     finally { setBusy(false) }
   }
   const signedIn = () => {

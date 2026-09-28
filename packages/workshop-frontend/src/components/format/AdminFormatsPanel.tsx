@@ -1,3 +1,4 @@
+import DeleteConfirmationDialog from '../DeleteConfirmationDialog'
 // Admin panel for the deployment's standard output formats.
 //
 // A format is an ordinary blueprint the deployment has *promoted*: offered as "New Slides" and
@@ -43,6 +44,7 @@ export default function AdminFormatsPanel({
 }) {
   const { authenticatedApi } = useAuthenticatedApi()
   const toasts = useKumoToastManager()
+  const [removeTarget, setRemoveTarget] = useState<AdminFormat | null>(null)
   const [busy, setBusy] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<Promotable[]>([])
@@ -122,7 +124,7 @@ export default function AdminFormatsPanel({
               isLast={i === formats.length - 1}
               onMove={(delta) => move(i, delta)}
               onPatch={(patch) => mutate(() => admin.updateFormat(format.blueprintId, patch))}
-              onRemove={() => mutate(() => admin.removeFormat(format.blueprintId))}
+              onRemove={() => setRemoveTarget(format)}
             />
           ))}
         </div>
@@ -162,6 +164,10 @@ export default function AdminFormatsPanel({
           ))}
         </DropdownMenu.Content>
       </DropdownMenu>
+      <DeleteConfirmationDialog open={removeTarget !== null} title="Remove standard format?"
+        description="This removes its name and settings from the offered formats. Existing outputs remain available."
+        confirmLabel="Remove format" isDeleting={busy} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}
+        onConfirm={() => { if (removeTarget) void mutate(async () => { await admin.removeFormat(removeTarget.blueprintId); setRemoveTarget(null); toasts.add({title: 'Format removed.', variant: 'success'}) }) }} />
     </div>
   )
 }

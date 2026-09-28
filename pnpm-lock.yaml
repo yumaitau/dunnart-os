@@ -214,6 +214,9 @@ importers:
 
   packages/gatekeeper-context:
     dependencies:
+      '@gadgets/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@gadgets/backend-utils':
         specifier: workspace:*
         version: link:../backend-utils
@@ -653,6 +656,9 @@ importers:
 
   packages/gatekeeper-scheduler:
     dependencies:
+      '@gadgets/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@gadgets/backend-utils':
         specifier: workspace:*
         version: link:../backend-utils
@@ -1125,6 +1131,9 @@ importers:
 
   packages/workshop-frontend:
     dependencies:
+      '@gadgets/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@better-auth/passkey':
         specifier: 1.7.5
         version: 1.7.5(@better-auth/core@1.7.5(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.0(zod@4.5.4))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.3))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.2)(better-auth@1.7.5(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(@vitest/browser-preview@4.1.10)(jsdom@26.1.0(supports-color@10.2.2))(vite@7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.2)(yaml@2.9.0))))(better-call@1.4.0(zod@4.5.4))(nanostores@1.5.3)

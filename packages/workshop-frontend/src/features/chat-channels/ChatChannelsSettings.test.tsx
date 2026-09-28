@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Toasty } from "@cloudflare/kumo";
 /* eslint-disable react/react-in-jsx-scope */
 import { act, StrictMode } from "react";
 import { RpcStub, RpcTarget } from "capnweb";
@@ -72,13 +73,13 @@ afterEach(() => {
 const render = () =>
   act(async () =>
     root.render(
-      <StrictMode>
+      <StrictMode><Toasty>
         <ChatChannelsSettings />
-      </StrictMode>,
+      </Toasty></StrictMode>,
     ),
   );
 const button = (name: string) => {
-  const value = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+  const value = [...document.querySelectorAll<HTMLButtonElement>("button")].findLast(
     (b) => b.textContent === name,
   );
   if (!value) throw new Error(name);
@@ -134,6 +135,8 @@ it("revokes links through the signed-in API and reports uncertain deliveries", a
   await render();
   expect(container.textContent).toContain("uncertain replies are not sent again");
   await click("Unlink slack");
+  expect(context.api.unlinkChatChannel).not.toHaveBeenCalled();
+  await click("Unlink channel");
   expect(context.api.unlinkChatChannel).toHaveBeenCalledWith("link1");
 });
 it("ignores a completed pairing when the account changes", async () => {

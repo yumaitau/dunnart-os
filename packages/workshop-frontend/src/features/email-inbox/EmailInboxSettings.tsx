@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Checkbox, Select } from "@cloudflare/kumo";
+import { Button, Checkbox, Select, useKumoToastManager } from "@cloudflare/kumo";
 import type { EmailInboxStatus } from "@gadgets/workshop-shared/email-inbox";
 import type { GadgetMetadataWithTimestamps } from "@gadgets/workshop-shared/api";
 import { useAuthenticatedApi, useTimeZone } from "../../AuthContext";
 import { formatFullTimestamp } from "../../utils/formatTimestamp";
 
+import DeleteConfirmationDialog from "../../components/DeleteConfirmationDialog";
+
 export const EmailInboxSettings = () => {
   const { authenticatedApi } = useAuthenticatedApi();
   const timeZone = useTimeZone();
+  const toasts = useKumoToastManager();
+  const [confirmation, setConfirmation] = useState<"rotate" | "disable" | "workspace" | null>(null);
   const [loadedApi, setLoadedApi] = useState<{ api: typeof authenticatedApi } | null>(null);
   const [status, setStatus] = useState<EmailInboxStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<GadgetMetadataWithTimestamps[]>([]);
@@ -17,11 +21,11 @@ export const EmailInboxSettings = () => {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const generation = useRef(0);
-  const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const current = ++generation.current;
     setStatus(null);
+    setConfirmation(null);
     setWorkspace(null);
     setError(null);
     setBusy(false);
@@ -44,7 +48,7 @@ export const EmailInboxSettings = () => {
     };
   }, [authenticatedApi]);
 
-  const run = async (operation: () => Promise<EmailInboxStatus>) => {
+  const run = async (operation: () => Promise<EmailInboxStatus>, success = "Email intake updated.") => {
     const current = generation.current;
     setBusy(true);
     setError(null);
@@ -54,9 +58,13 @@ export const EmailInboxSettings = () => {
       if (current !== generation.current) return;
       setLoadedApi({ api: authenticatedApi });
       setStatus(next);
+      setConfirmation(null);
+      toasts.add({ title: success, variant: "success" });
     } catch {
-      if (current === generation.current)
+      if (current === generation.current) {
         setError("Could not confirm the change. Refresh to check, then retry.");
+        toasts.add({ title: "Email intake could not be updated.", variant: "error" });
+      }
     } finally {
       if (current === generation.current) setBusy(false);
     }
@@ -86,7 +94,7 @@ export const EmailInboxSettings = () => {
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-semibold text-kumo-strong">Email intake</h2>
-        <Button disabled={busy} onClick={() => run(refresh)}>
+        <Button disabled={busy} onClick={() => run(refresh, "Inbox refreshed.")}>
           Refresh inbox
         </Button>
       </div>
@@ -104,13 +112,12 @@ export const EmailInboxSettings = () => {
       )}
       {current?.available && (
         <>
-          <div ref={container}>
+          <div>
             <Select<string>
               label="Email destination workspace"
               value={workspace}
               onValueChange={setWorkspace}
               disabled={busy}
-              container={container}
               className="w-full"
               placeholder="Choose a workspace"
               renderValue={(value) =>
@@ -138,7 +145,9 @@ export const EmailInboxSettings = () => {
           <Button
             disabled={busy || !workspace}
             onClick={() =>
-              run(() => authenticatedApi.configureEmailInbox(workspace!, continueRelated))
+              current.configuration && current.configuration.workspaceId !== workspace
+                ? setConfirmation("workspace")
+                : run(() => authenticatedApi.configureEmailInbox(workspace!, continueRelated))
             }
           >
             {busy
@@ -164,7 +173,7 @@ export const EmailInboxSettings = () => {
                     const active = generation.current;
                     try {
                       await navigator.clipboard.writeText(current.configuration!.address);
-                      if (active === generation.current) setCopied(true);
+                      if (active === generation.current) { setCopied(true); toasts.add({ title: "Private address copied.", variant: "success" }); }
                     } catch {
                       if (active === generation.current)
                         setError("Could not copy. Select the address above and copy it manually.");
@@ -175,18 +184,13 @@ export const EmailInboxSettings = () => {
                 </Button>
                 <Button
                   disabled={busy}
-                  onClick={() => run(() => authenticatedApi.rotateEmailInboxAddress())}
+                  onClick={() => setConfirmation("rotate")}
                 >
                   Replace address
                 </Button>
                 <Button
                   disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      await authenticatedApi.disableEmailInbox();
-                      return authenticatedApi.getEmailInboxStatus();
-                    })
-                  }
+                  onClick={() => setConfirmation("disable")}
                 >
                   Disable intake
                 </Button>
@@ -250,7 +254,7 @@ export const EmailInboxSettings = () => {
                   {message.status === "failed" && current.configuration && (
                     <Button
                       disabled={busy}
-                      onClick={() => run(() => authenticatedApi.retryInboxMessage(message.id))}
+                      onClick={() => run(() => authenticatedApi.retryInboxMessage(message.id), "Email queued for retry.")}
                     >
                       Retry email
                     </Button>
@@ -266,6 +270,20 @@ export const EmailInboxSettings = () => {
           </p>
         </div>
       )}
+      <DeleteConfirmationDialog
+        open={confirmation !== null}
+        title={confirmation === "disable" ? "Disable email intake?" : confirmation === "rotate" ? "Replace private address?" : "Change email workspace?"}
+        description="The current address will stop accepting emails and queued messages will be cancelled. Existing chats remain."
+        confirmLabel={confirmation === "disable" ? "Disable intake" : confirmation === "rotate" ? "Replace address" : "Change workspace"}
+        confirmingLabel="Updating…" isDeleting={busy}
+        onOpenChange={(open) => { if (!open) setConfirmation(null); }}
+        onConfirm={() => run(async () => {
+          if (confirmation === "rotate") return authenticatedApi.rotateEmailInboxAddress();
+          if (confirmation === "workspace") return authenticatedApi.configureEmailInbox(workspace!, continueRelated);
+          await authenticatedApi.disableEmailInbox();
+          return authenticatedApi.getEmailInboxStatus();
+        })}
+      />
     </section>
   );
 };

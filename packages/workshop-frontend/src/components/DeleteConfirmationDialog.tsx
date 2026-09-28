@@ -28,13 +28,14 @@ export default function DeleteConfirmationDialog({
 }: DeleteConfirmationDialogProps) {
   return (
     <Dialog.Root
+      role="alertdialog"
       open={open}
       onOpenChange={(nextOpen) => {
         if (!isDeleting) onOpenChange(nextOpen)
       }}
     >
       <Dialog
-        className="responsive-dialog !z-[1000] !w-[min(420px,calc(100vw-32px))] overflow-hidden bg-kumo-base p-0 !top-[20%] !-translate-y-0"
+        className="responsive-dialog !z-[1200] !w-[min(420px,calc(100vw-32px))] overflow-hidden bg-kumo-base p-0 "
         size="sm"
       >
         <div className="flex items-start justify-between gap-4 border-b border-kumo-line px-5 py-4">
@@ -65,6 +66,7 @@ export default function DeleteConfirmationDialog({
             render={(props) => (
               <WorkshopButton
                 {...props}
+                autoFocus
                 className="!h-9"
                 disabled={isDeleting}
               >

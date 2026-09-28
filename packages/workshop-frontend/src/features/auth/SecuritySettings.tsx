@@ -1,9 +1,13 @@
 import { useState } from 'react'
-import { Button, Input } from '@cloudflare/kumo'
+import DeleteConfirmationDialog from '../../components/DeleteConfirmationDialog'
+import { Button, Input, useKumoToastManager } from '@cloudflare/kumo'
 import QRCode from 'qrcode'
 import { authClient } from './authClient'
 
 export const SecuritySettings = () => {
+  const toasts = useKumoToastManager()
+  const [confirmation, setConfirmation] = useState<{ title: string; description: string; label: string; action: () => Promise<void> } | null>(null)
+  const confirm = (title: string, description: string, label: string, action: () => Promise<void>) => setConfirmation({title, description, label, action})
   const session = authClient.useSession()
   const passkeys = authClient.useListPasskeys()
   const [password, setPassword] = useState('')
@@ -14,9 +18,10 @@ export const SecuritySettings = () => {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const success = (title: string) => { setMessage(title); toasts.add({title, variant: 'success'}) }
   const run = async (action: () => Promise<void>) => {
     setBusy(true); setError(null); setMessage('')
-    try { await action() } catch (err) { setError(err instanceof Error ? err.message : 'Security setting could not be updated.') }
+    try { await action(); setConfirmation(null) } catch (err) { setError(err instanceof Error ? err.message : 'Security setting could not be updated.'); toasts.add({title: 'Security setting could not be updated.', variant: 'error'}) }
     finally { setBusy(false) }
   }
   return <section className="space-y-5 rounded-xl border border-kumo-line bg-kumo-base p-6" aria-labelledby="security-title">
@@ -29,10 +34,10 @@ export const SecuritySettings = () => {
       {passkeys.error && <p role="alert">Could not load passkeys.</p>}
       <ul className="space-y-2">{passkeys.data?.map(key => <li key={key.id} className="flex items-center justify-between gap-3">
         <span>{key.name || 'Passkey'}</span>
-        <Button variant="secondary" disabled={busy} onClick={() => void run(async () => {
+        <Button variant="secondary" disabled={busy} onClick={() => confirm("Remove passkey?", "This device will no longer be able to sign in with this passkey. Keep another sign-in method available.", "Remove passkey", async () => {
           const result = await authClient.passkey.deletePasskey({ id: key.id })
           if (result.error) throw new Error(result.error.message)
-          setMessage('Passkey removed.')
+          success('Passkey removed.')
         })}>Remove</Button>
       </li>)}</ul>
       <Input label="Passkey name" value={name} onChange={event => setName(event.target.value)} placeholder="Personal laptop" />
@@ -40,7 +45,7 @@ export const SecuritySettings = () => {
         const result = await authClient.passkey.addPasskey({ name: name.trim() || undefined })
         if (result?.error) throw new Error(result.error.message)
         if (!result?.data) throw new Error('Passkey was not added.')
-        setName(''); setMessage('Passkey added.')
+        setName(''); success('Passkey added.')
       })}>Add passkey</Button>
     </div>
     <div className="space-y-3 border-t border-kumo-line pt-5">
@@ -57,14 +62,14 @@ export const SecuritySettings = () => {
         <Button variant="primary" disabled={busy || !code} onClick={() => void run(async () => {
           const result = await authClient.twoFactor.verifyTotp({ code })
           if (result.error) throw new Error(result.error.message)
-          setSetup(null); setCode(''); setPassword(''); setMessage('Authenticator MFA enabled.')
+          setSetup(null); setCode(''); setPassword(''); success('Authenticator MFA enabled.')
         })}>Verify and enable MFA</Button>
       </div> : session.data?.user.twoFactorEnabled ? <>
         <p className="text-sm">Authenticator MFA is enabled.</p>
-        <Button variant="secondary" disabled={busy} onClick={() => void run(async () => {
+        <Button variant="secondary" disabled={busy} onClick={() => confirm("Disable authenticator MFA?", "Password sign-in will no longer require an authenticator code.", "Disable MFA", async () => {
           const result = await authClient.twoFactor.disable({ password: password || undefined })
           if (result.error) throw new Error(result.error.message)
-          setPassword(''); setMessage('Authenticator MFA disabled.')
+          setPassword(''); success('Authenticator MFA disabled.')
         })}>Disable MFA</Button>
       </> : <Button variant="secondary" disabled={busy} onClick={() => void run(async () => {
         const result = await authClient.twoFactor.enable({ password: password || undefined })
@@ -82,14 +87,18 @@ export const SecuritySettings = () => {
         <Button variant="secondary" disabled={busy || !password || newPassword.length < 12} onClick={() => void run(async () => {
           const result = await authClient.changePassword({ currentPassword: password, newPassword, revokeOtherSessions: true })
           if (result.error) throw new Error(result.error.message)
-          setPassword(''); setNewPassword(''); setMessage('Password changed; other sessions signed out.')
+          setPassword(''); setNewPassword(''); success('Password changed; other sessions signed out.')
         })}>Change password</Button>
-        <Button variant="secondary" disabled={busy} onClick={() => void run(async () => {
+        <Button variant="secondary" disabled={busy} onClick={() => confirm("Sign out other sessions?", "Your other signed-in devices will need to sign in again.", "Sign out sessions", async () => {
           const result = await authClient.revokeOtherSessions()
           if (result.error) throw new Error(result.error.message)
-          setMessage('Other sessions signed out. Open connections close within 30 seconds.')
+          success('Other sessions signed out. Open connections close within 30 seconds.')
         })}>Sign out other sessions</Button>
       </div>
     </div>
+    <DeleteConfirmationDialog open={confirmation !== null} title={confirmation?.title ?? "Confirm change"}
+      description={confirmation?.description} confirmLabel={confirmation?.label} confirmingLabel="Updating…" isDeleting={busy}
+      onOpenChange={(open) => { if (!open) setConfirmation(null) }}
+      onConfirm={() => { if (confirmation) void run(confirmation.action) }} />
   </section>
 }

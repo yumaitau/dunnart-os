@@ -1,7 +1,6 @@
 import { logRpcFailure } from '../rpcErrors'
 import { useState, useEffect } from 'react'
 import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
-import { TooltipProvider, Toasty } from '@cloudflare/kumo'
 import { RpcStub } from 'capnweb'
 import { AuthenticatedApi } from '@gadgets/workshop-shared/api'
 import { useRpcStub, useConnectionLost } from '../RpcContext'
@@ -10,6 +9,7 @@ import { AuthProvider } from '../AuthContext'
 import { HANDOFF_PATH } from '../connectHandoff'
 import { FeatureFlagsProvider } from '../FeatureFlagsContext'
 import Header from '../components/Header'
+import { NotFoundPage } from '../pages/NotFoundPage'
 import AppShell from '../components/AppShell/AppShell'
 import LoginPage from '../LoginPage'
 import OnboardingWizard from '../OnboardingWizard'
@@ -17,12 +17,14 @@ import AccountSelectionModal from '../components/billing/AccountSelectionModal'
 
 export const Route = createRootRoute({
   component: RootComponent,
+  notFoundComponent: () => <NotFoundPage />,
 })
 
 function RootComponent() {
   const rpcStub = useRpcStub()
   const connectionLost = useConnectionLost()
   const { isAuthenticated, authenticatedApi, isLoading, error, logout, login } = useAuth(rpcStub)
+  const notFound = useRouterState({ select: (s) => s.matches.some((match) => match._notFound || match.status === 'notFound') })
   const pathname = useRouterState({ select: (s) => s.location.pathname })
 
   // Routes that don't require auth (public routes)
@@ -35,7 +37,7 @@ function RootComponent() {
   // A standalone (no app shell) render is used for the handoff popup and for signed-out visitors
   // of public routes. Signed-in users get the full app chrome so public pages (esp. the blueprint
   // detail) feel native — sidebar and all — instead of floating on a bare page.
-  const standalone = isSignup || isHandoff || (isBlueprint && !isAuthenticated)
+  const standalone = notFound || isSignup || isHandoff || (isBlueprint && !isAuthenticated)
 
   // The workspace editor renders fullscreen (no app chrome). /gadget/ is the legacy URL, kept
   // here so the chrome doesn't flash in during the redirect to /workspace/.
@@ -93,16 +95,12 @@ function RootComponent() {
   if (standalone) {
     const showHeader = !isSignup && !isHandoff
     return (
-      <TooltipProvider>
-        <Toasty>
-          <div className="flex h-full min-h-0 flex-col">
-            {showHeader && <Header />}
-            <main className="min-h-0 flex-1 overflow-y-auto">
-              <Outlet />
-            </main>
-          </div>
-        </Toasty>
-      </TooltipProvider>
+      <div className="flex h-full min-h-0 flex-col">
+        {showHeader && <Header />}
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
     )
   }
 
@@ -113,14 +111,10 @@ function RootComponent() {
   return (
     <AuthProvider authenticatedApi={authenticatedApi} onLogout={logout}>
       <FeatureFlagsProvider>
-        <TooltipProvider>
-          <Toasty>
-            <AuthenticatedShell
-              authenticatedApi={authenticatedApi}
-              isWorkspaceEditor={isWorkspaceEditor}
-            />
-          </Toasty>
-        </TooltipProvider>
+        <AuthenticatedShell
+          authenticatedApi={authenticatedApi}
+          isWorkspaceEditor={isWorkspaceEditor}
+        />
       </FeatureFlagsProvider>
     </AuthProvider>
   )

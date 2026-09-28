@@ -1,3 +1,4 @@
+import DeleteConfirmationDialog from './components/DeleteConfirmationDialog'
 import { useTimeZone } from './AuthContext'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Dialog, useKumoToastManager } from '@cloudflare/kumo'
@@ -530,11 +531,7 @@ export default function BlueprintModal({ open, onClose, overseer, gadget, metada
                         const url = `${window.location.origin}/blueprint/${bp.id}`
                         return copyToClipboard(url)
                       }}
-                      isConfirmingDelete={confirmingDeleteId === bp.id}
-                      isDeleting={deletingId === bp.id}
                       onStartDelete={() => setConfirmingDeleteId(bp.id)}
-                      onConfirmDelete={() => deleteBlueprint(bp.id)}
-                      onCancelDelete={() => setConfirmingDeleteId(null)}
                     />
                   ))}
                 </div>
@@ -542,6 +539,10 @@ export default function BlueprintModal({ open, onClose, overseer, gadget, metada
             </section>
               </div>
             )}
+        <DeleteConfirmationDialog open={confirmingDeleteId !== null} title="Delete blueprint?"
+          description="The published link will stop working. Apps already created from this blueprint remain."
+          isDeleting={deletingId !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setConfirmingDeleteId(null) }}
+          onConfirm={() => { if (confirmingDeleteId) void deleteBlueprint(confirmingDeleteId) }} />
       </Dialog>
     </Dialog.Root>
   )
@@ -554,11 +555,7 @@ function BlueprintRow({
   onUpdateCode,
   onRetryPublish,
   onCopyLink,
-  isConfirmingDelete,
-  isDeleting,
   onStartDelete,
-  onConfirmDelete,
-  onCancelDelete,
 }: {
   bp: BlueprintGadgetSummary
   isFirst: boolean
@@ -566,11 +563,7 @@ function BlueprintRow({
   onUpdateCode: () => void
   onRetryPublish: () => void
   onCopyLink: () => Promise<boolean>
-  isConfirmingDelete: boolean
-  isDeleting: boolean
   onStartDelete: () => void
-  onConfirmDelete: () => void
-  onCancelDelete: () => void
 }) {
   const timeZone = useTimeZone()
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -581,40 +574,6 @@ function BlueprintRow({
   }, [copyState])
 
   const ROW_MIN_H = 'min-h-[116px]'
-  if (isConfirmingDelete) {
-    return (
-      <div
-        className={`flex items-center px-4 py-4 ${ROW_MIN_H} ${isFirst ? '' : 'border-t border-kumo-line'} bg-kumo-danger-tint/40`}
-      >
-        <div className="flex w-full flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="m-0 truncate text-[14px] leading-5 font-semibold tracking-[-0.3px] text-kumo-danger">
-              Delete "{bp.title}"?
-            </p>
-            <p className="m-0 mt-0.5 text-[12px] leading-4 font-normal tracking-[-0.2px] text-kumo-subtle">
-              People who started a gadget from this blueprint won't be affected, but the link will stop working.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onConfirmDelete}
-            disabled={isDeleting}
-            className="inline-flex h-7 shrink-0 cursor-pointer items-center rounded-md bg-kumo-danger px-2.5 text-[12px] leading-4 font-medium tracking-[-0.2px] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </button>
-          <button
-            type="button"
-            onClick={onCancelDelete}
-            disabled={isDeleting}
-            className="inline-flex h-7 shrink-0 cursor-pointer items-center rounded-md bg-transparent px-2.5 text-[12px] leading-4 font-medium tracking-[-0.2px] text-kumo-subtle transition-colors hover:bg-kumo-tint hover:text-kumo-default disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div

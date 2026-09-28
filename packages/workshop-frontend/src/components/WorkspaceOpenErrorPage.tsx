@@ -1,3 +1,4 @@
+import { NotFoundPage } from '../pages/NotFoundPage'
 import { LinkBreak, Lock, MagnifyingGlass, WarningCircle } from '@phosphor-icons/react'
 import { useEffect, useId, useRef } from 'react'
 import {
@@ -64,6 +65,8 @@ export default function WorkspaceOpenErrorPage({ kind, onRetry, onGoToWorkspaces
   useEffect(() => {
     titleRef.current?.focus()
   }, [])
+
+  if (kind === 'not-found') return <NotFoundPage title={title} description={message} />
 
   return (
     <div className="flex min-h-full items-center justify-center bg-kumo-base px-6 py-12">

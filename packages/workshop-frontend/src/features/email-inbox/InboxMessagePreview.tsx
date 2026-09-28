@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@cloudflare/kumo";
+import { Button, useKumoToastManager } from "@cloudflare/kumo";
 import type { EmailInboxMessage } from "@gadgets/workshop-shared/email-inbox";
 import { useAuthenticatedApi, useTimeZone } from "../../AuthContext";
 import { formatFullTimestamp } from "../../utils/formatTimestamp";
@@ -17,6 +17,7 @@ export const InboxMessagePreview = ({
 }) => {
   const { authenticatedApi } = useAuthenticatedApi();
   const timeZone = useTimeZone();
+  const toasts = useKumoToastManager();
   const [loaded, setLoaded] = useState<{
     api: typeof authenticatedApi;
     id: string;
@@ -55,10 +56,13 @@ export const InboxMessagePreview = ({
       if (active === generation.current) {
         setAttempt((value) => value + 1);
         onRetried();
+        toasts.add({title: "Email queued for retry.", variant: "success"});
       }
     } catch {
-      if (active === generation.current)
+      if (active === generation.current) {
         setError("Could not retry this email. Refresh its status before trying again.");
+        toasts.add({title: "Email retry failed.", variant: "error"});
+      }
     } finally {
       if (active === generation.current) setBusy(false);
     }

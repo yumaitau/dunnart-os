@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Button } from '@cloudflare/kumo'
+import { Button, useKumoToastManager } from '@cloudflare/kumo'
 import { useAuthenticatedApi } from '../../AuthContext'
 import { TimeZonePicker } from './TimeZonePicker'
 
 export const TimeZoneSettings = () => {
+  const toasts = useKumoToastManager()
   const { timeZone, timeZoneLoaded, timeZoneError, saveTimeZone } = useAuthenticatedApi()
   const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -20,8 +21,8 @@ export const TimeZoneSettings = () => {
       <Button disabled={busy || !timeZoneLoaded || draft === null} onClick={async () => {
         if (draft === null) return
         setBusy(true); setError(null); setMessage(null)
-        try { await saveTimeZone(draft); setDraft(null); setMessage('Timezone saved.') }
-        catch { setError('Could not confirm timezone save. Reload to check, or retry.') }
+        try { await saveTimeZone(draft); setDraft(null); setMessage('Timezone saved.'); toasts.add({title: 'Timezone saved.', variant: 'success'}) }
+        catch { setError('Could not confirm timezone save. Reload to check, or retry.'); toasts.add({title: 'Timezone could not be saved.', variant: 'error'}) }
         finally { setBusy(false) }
       }}>Save timezone</Button>
     </section>

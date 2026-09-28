@@ -1,5 +1,6 @@
 import { StrictMode, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Toasty, TooltipProvider } from '@cloudflare/kumo'
 import { RouterProvider } from '@tanstack/react-router'
 import { RpcPromise, RpcStub, newWebSocketRpcSession } from 'capnweb'
 import { PublicApi, ServerConfig } from '@gadgets/workshop-shared/api'
@@ -246,14 +247,18 @@ function AppWithConnection() {
       <ServerConfigErrorContext.Provider value={serverConfigError}>
         <ServerConfigContext.Provider value={serverConfig}>
           <ThemeProvider>
-            <div className="app-viewport flex min-w-0 flex-col overflow-hidden">
-              <AnnouncementBanner />
-              <div className="h-full min-h-0 flex-1">
-                {serverConfig ? <RouterProvider router={router} /> : <div role="status" className="flex h-full items-center justify-center text-kumo-subtle">
-                  {serverConfigError ? 'Could not load sign-in settings. Reload to retry.' : 'Loading…'}
-                </div>}
-              </div>
-            </div>
+            <TooltipProvider>
+              <Toasty>
+                <div className="app-viewport flex min-w-0 flex-col overflow-hidden">
+                  <AnnouncementBanner />
+                  <div className="h-full min-h-0 flex-1">
+                    {serverConfig ? <RouterProvider router={router} /> : <div role="status" className="flex h-full items-center justify-center text-kumo-subtle">
+                      {serverConfigError ? 'Could not load sign-in settings. Reload to retry.' : 'Loading…'}
+                    </div>}
+                  </div>
+                </div>
+              </Toasty>
+            </TooltipProvider>
           </ThemeProvider>
         </ServerConfigContext.Provider>
       </ServerConfigErrorContext.Provider>

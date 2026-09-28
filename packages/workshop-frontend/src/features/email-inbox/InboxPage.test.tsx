@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Toasty } from "@cloudflare/kumo";
 /* eslint-disable react/react-in-jsx-scope */
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -65,9 +66,9 @@ afterEach(() => {
 const render = () =>
   act(async () =>
     root.render(
-      <StrictMode>
+      <StrictMode><Toasty>
         <InboxPage />
-      </StrictMode>,
+      </Toasty></StrictMode>,
     ),
   );
 const click = (text: string) =>

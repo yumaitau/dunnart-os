@@ -1,3 +1,4 @@
+import DeleteConfirmationDialog from './components/DeleteConfirmationDialog'
 import { useTimeZone } from './AuthContext'
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, useId, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -403,6 +404,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
   const [creatingLink, setCreatingLink] = useState(false)
   const [showLinkComposer, setShowLinkComposer] = useState(false)
   const [confirmationTarget, setConfirmationTarget] = useState<ConfirmationTarget | null>(null)
+  const [confirmDestruction, setConfirmDestruction] = useState(false)
   const [confirmationBusy, setConfirmationBusy] = useState(false)
   const creatingLinkRef = useRef(false)
   const addingRef = useRef(false)
@@ -924,6 +926,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
     try {
       const removed = await overseer.removeCollaborator(removeTarget.profileId, [...removeTarget.keepSet])
       setConfirmationTarget(null)
+      setConfirmDestruction(false)
       toasts.add({
         title: removed.length > 0
           ? 'Collaborator removed.'
@@ -993,6 +996,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
     setConfirmationBusy(true)
     try {
       await overseer.revokeShareLink(revokeTarget.linkId, [...revokeTarget.keepSet])
+      setConfirmDestruction(false)
       setConfirmationTarget(null)
       if (revokeTarget.linkId === newShareLinkId) {
         setNewShareLink(null)
@@ -1377,7 +1381,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                           label="Remove"
                           busy={removeTarget.previewing || confirmationBusy}
                           busyLabel={removeTarget.previewing ? 'Checking…' : undefined}
-                          onConfirm={handleConfirmRemoveCollaborator}
+                          onConfirm={() => setConfirmDestruction(true)}
                           onCancel={() => setConfirmationTarget(null)}
                         />
                       ) : (
@@ -1469,7 +1473,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                             label="Revoke"
                             busy={revokeTarget.previewing || confirmationBusy}
                             busyLabel={revokeTarget.previewing ? 'Checking…' : undefined}
-                            onConfirm={handleConfirmRevokeShareLink}
+                            onConfirm={() => setConfirmDestruction(true)}
                             onCancel={() => setConfirmationTarget(null)}
                           />
                         ) : (
@@ -1528,6 +1532,12 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
           </section>
           )}
         </div>
+        <DeleteConfirmationDialog open={confirmDestruction && confirmationTarget !== null}
+          title={confirmationTarget?.kind === 'revoke' ? 'Revoke share link?' : 'Remove collaborator?'}
+          description="Access will be removed according to the people you chose to keep. Existing copies outside this workspace are unaffected."
+          confirmLabel={confirmationTarget?.kind === 'revoke' ? 'Revoke link' : 'Remove collaborator'}
+          isDeleting={confirmationBusy} onOpenChange={setConfirmDestruction}
+          onConfirm={confirmationTarget?.kind === 'revoke' ? handleConfirmRevokeShareLink : handleConfirmRemoveCollaborator} />
         <div ref={setDirectoryPortalContainer} className="pointer-events-none absolute inset-0 z-30" />
       </Dialog>
     </Dialog.Root>

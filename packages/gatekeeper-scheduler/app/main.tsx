@@ -1,3 +1,4 @@
+import { Toasty, TooltipProvider } from '@cloudflare/kumo';
 import { createRoot } from "react-dom/client";
 import { RpcTarget, newMessagePortRpcSession, type RpcStub } from "capnweb";
 import type {
@@ -47,14 +48,14 @@ function main() {
         captureMechanism: "react",
       }),
   }).render(
-    <ErrorBoundary>
+    <ErrorBoundary><TooltipProvider><Toasty>
       <SchedulerPage
         api={host.ui}
         openWorkspace={(workspaceId, gadgetId) => host.openWorkspace(workspaceId, gadgetId)}
         resolveWorkspaceTitles={(ids) => host.resolveWorkspaceTitles(ids)}
         openPrompt={(prompt) => host.openPrompt(prompt)}
       />
-    </ErrorBoundary>,
+    </Toasty></TooltipProvider></ErrorBoundary>,
   );
 }
 

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Toasty } from "@cloudflare/kumo";
 /* eslint-disable react/react-in-jsx-scope */
 import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -50,7 +51,7 @@ describe('BackupsPanel', () => {
     vi.unstubAllGlobals()
   })
 
-  const render = () => act(async () => root.render(<StrictMode><BackupsPanel admin={admin} /></StrictMode>))
+  const render = () => act(async () => root.render(<StrictMode><Toasty><BackupsPanel admin={admin} /></Toasty></StrictMode>))
   const button = (name: string) => {
     const found = [...container.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.getAttribute('aria-label') === name || item.textContent === name)
     if (!found) throw new Error(`Missing button: ${name}`)

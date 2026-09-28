@@ -1,3 +1,4 @@
+import DeleteConfirmationDialog from './DeleteConfirmationDialog'
 import { Link } from '@tanstack/react-router'
 import {
   Blueprint as BlueprintIcon,
@@ -124,6 +125,8 @@ export default function BlueprintList() {
   const { authenticatedApi } = useAuthenticatedApi()
   const toasts = useKumoToastManager()
 
+  const [removeTarget, setRemoveTarget] = useState<BlueprintItem | null>(null)
+  const [removing, setRemoving] = useState(false)
   const [items, setItems] = useState<BlueprintItem[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -223,6 +226,8 @@ export default function BlueprintList() {
   }
 
   const handleRemoveFromLibrary = async (item: BlueprintItem) => {
+    if (removing) return
+    setRemoving(true)
     try {
       await authenticatedApi.removeBlueprintFromLibrary(item.id)
       // If the user also owns it, it stays in the list (just no longer in the library); otherwise
@@ -232,11 +237,12 @@ export default function BlueprintList() {
           .map((b) => (b.id === item.id ? { ...b, inLibrary: false } : b))
           .filter((b) => b.inLibrary || b.isOwn),
       )
+      setRemoveTarget(null)
       toasts.add({ title: 'Removed from library', variant: 'success' })
     } catch (err) {
       console.error('Failed to remove blueprint from library:', err)
       toasts.add({ title: 'Failed to remove blueprint', variant: 'error' })
-    }
+    } finally { setRemoving(false) }
   }
 
   const filtered = items.filter((b) => {
@@ -342,11 +348,15 @@ export default function BlueprintList() {
               key={item.id}
               item={item}
               onTogglePin={handleTogglePin}
-              onRemoveFromLibrary={handleRemoveFromLibrary}
+              onRemoveFromLibrary={setRemoveTarget}
             />
           ))
         )}
       </div>
+      <DeleteConfirmationDialog open={removeTarget !== null} title="Remove blueprint from library?"
+        description={<>Remove {removeTarget?.title} from your library? Existing apps and the published blueprint remain.</>}
+        confirmLabel="Remove from library" isDeleting={removing} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}
+        onConfirm={() => { if (removeTarget) void handleRemoveFromLibrary(removeTarget) }} />
     </div>
   )
 }

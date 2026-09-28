@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Button, Input, Select, Switch } from '@cloudflare/kumo'
 import { TimeZonePicker } from '../timezone/TimeZonePicker'
 import type { BackupSchedule } from './backupTypes'
@@ -11,16 +11,15 @@ export const BackupScheduleForm = ({ schedule, busy, onSave }: {
   onSave: (schedule: BackupSchedule) => Promise<void>
 }) => {
   const [draft, setDraft] = useState(schedule)
-  const form = useRef<HTMLFormElement>(null)
   return (
-    <form ref={form} className="space-y-4" onSubmit={(event) => { event.preventDefault(); void onSave(draft) }}>
+    <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void onSave(draft) }}>
       <fieldset disabled={busy} className="min-w-0 space-y-4">
       <div className="flex items-center justify-between gap-4">
         <h3 className="font-semibold text-kumo-strong">Schedule</h3>
         <Switch aria-label="Enable scheduled backups" checked={draft.enabled} disabled={busy}
           onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />
       </div>
-      <Select label="Backup frequency" value={draft.frequency} disabled={busy} className="w-full" container={form}
+      <Select label="Backup frequency" value={draft.frequency} disabled={busy} className="w-full"
         renderValue={(value) => value === 'weekly' ? 'Weekly' : 'Daily'}
         onValueChange={(frequency) => { if (frequency === 'daily' || frequency === 'weekly') setDraft({ ...draft, frequency }) }}>
         <Select.Option value="daily">Daily</Select.Option>
@@ -28,7 +27,7 @@ export const BackupScheduleForm = ({ schedule, busy, onSave }: {
       </Select>
       <TimeZonePicker value={draft.timeZone} disabled={busy} onChange={(timeZone) => setDraft({ ...draft, timeZone })} />
       {draft.frequency === 'weekly' && (
-        <Select label="Day of week" value={String(draft.weekday)} disabled={busy} className="w-full" container={form}
+        <Select label="Day of week" value={String(draft.weekday)} disabled={busy} className="w-full"
           renderValue={(value) => weekdays[Number(value)]}
           onValueChange={(value) => { if (value !== null) setDraft({ ...draft, weekday: Number(value) }) }}>
           {weekdays.map((label, index) => <Select.Option key={label} value={String(index)}>{label}</Select.Option>)}

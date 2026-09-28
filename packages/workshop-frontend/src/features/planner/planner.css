@@ -229,28 +229,24 @@
   color: var(--color-kumo-base);
 }
 
-.planner dialog {
+.planner.planner-dialog {
   border: 1px solid var(--color-kumo-line);
   border-radius: 12px;
   padding: 22px;
-  /* Tailwind resets the native dialog margin; restore viewport centering. */
-  position: fixed;
-  inset: 0;
-  margin: auto;
+  min-height: 0;
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
   background: var(--color-kumo-control);
   color: var(--text-color-kumo-default);
 }
-.planner dialog::backdrop { background: color-mix(in srgb, var(--color-black) 50%, transparent); }
-.planner dialog h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.planner-dialog h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
 .planner .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
-.planner dialog .error { margin-bottom: 16px; }
-.planner dialog label { display: block; font-size: 0.75rem; font-weight: 600; margin-bottom: 12px; }
-.planner dialog input,
-.planner dialog textarea,
-.planner dialog select {
+.planner-dialog .error { margin-bottom: 16px; }
+.planner-dialog label { display: block; font-size: 0.75rem; font-weight: 600; margin-bottom: 12px; }
+.planner-dialog input,
+.planner-dialog textarea,
+.planner-dialog select {
   display: block;
   width: 100%;
   margin-top: 4px;
@@ -261,8 +257,8 @@
   color: var(--text-color-kumo-default);
   min-width: 0;
 }
-.planner dialog :is(input, textarea)::placeholder { color: var(--text-color-kumo-default); }
-.planner dialog textarea { min-height: 88px; resize: vertical; }
+.planner-dialog :is(input, textarea)::placeholder { color: var(--text-color-kumo-default); }
+.planner-dialog textarea { min-height: 88px; resize: vertical; }
 .planner .grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .planner .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 .planner .delete { margin-right: auto; }

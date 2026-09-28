@@ -9,6 +9,7 @@ import type { PublicApi } from '@gadgets/workshop-shared/api'
 
 const testState = vi.hoisted(() => ({
   pathname: '/',
+  notFound: false,
   isLoading: false,
   // A signed-in tab's stub: the shell would call this first, so a popup routed into the shell by
   // mistake shows up as a call here.
@@ -19,8 +20,8 @@ const testState = vi.hoisted(() => ({
 // here, and the routed page is a marker so no real screen renders.
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
-  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
-    select({ location: { pathname: testState.pathname } }),
+  useRouterState: ({ select }: { select: (s: { location: { pathname: string }; matches: {_notFound?: boolean}[] }) => unknown }) =>
+    select({ location: { pathname: testState.pathname }, matches: [{_notFound: testState.notFound}] }),
   Outlet: () => <div data-testid="outlet">routed page</div>,
 }))
 
@@ -56,6 +57,7 @@ describe('root route standalone rendering', () => {
     act(() => root?.unmount())
     container?.remove()
     testState.pathname = '/'
+    testState.notFound = false
     testState.isLoading = false
     testState.authenticatedApi = null
   })
@@ -103,6 +105,13 @@ describe('root route standalone rendering', () => {
 
     expect(page.querySelector('[data-testid="outlet"]')).not.toBeNull()
     expect(page.querySelector('[data-testid="header"]')).toBeNull()
+    expect(page.querySelector('[data-testid="login"]')).toBeNull()
+  })
+
+  it('renders unknown paths without blocking on sign-in', async () => {
+    testState.notFound = true
+    const page = await renderAt('/missing', true)
+    expect(page.querySelector('[data-testid="outlet"]')).not.toBeNull()
     expect(page.querySelector('[data-testid="login"]')).toBeNull()
   })
 

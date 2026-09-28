@@ -71,8 +71,8 @@ describe('WorkspaceOpenErrorPage', () => {
 
     expect(renderedContainer.querySelector('h1')?.textContent).toBe('Workspace not found')
     expect(renderedContainer.textContent).toContain('The link may be incorrect, or the workspace may have been deleted.')
-    expect([...renderedContainer.querySelectorAll('button')].map(button => button.textContent))
-      .toEqual(['Go to workspaces'])
+    expect(renderedContainer.querySelector('a[href="/workspaces"]')?.textContent).toBe('Your workspaces')
+    expect(renderedContainer.textContent).toContain('404')
   })
 
   it('lets a refused redeemer retry once the owner adds them directly', async () => {

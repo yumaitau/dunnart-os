@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Toasty } from "@cloudflare/kumo";
 /* eslint-disable react/react-in-jsx-scope */
 import { act, StrictMode } from "react";
 import { RpcStub, RpcTarget } from "capnweb";
@@ -80,13 +81,13 @@ afterEach(() => {
 const render = () =>
   act(async () =>
     root.render(
-      <StrictMode>
+      <StrictMode><Toasty>
         <EmailInboxSettings />
-      </StrictMode>,
+      </Toasty></StrictMode>,
     ),
   );
 const button = (name: string) => {
-  const value = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+  const value = [...document.querySelectorAll<HTMLButtonElement>("button")].findLast(
     (b) => b.textContent === name,
   );
   if (!value) throw new Error(name);
@@ -114,7 +115,12 @@ it("requires an owned workspace and explains the private address authority", asy
   expect(container.textContent).toContain("Anyone with this address");
   expect(container.textContent).toContain("no automatic email replies");
   await click("Replace address");
+  expect(context.api.rotateEmailInboxAddress).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+  await click("Replace address");
   expect(context.api.rotateEmailInboxAddress).toHaveBeenCalledTimes(1);
+  await click("Disable intake");
+  expect(context.api.disableEmailInbox).not.toHaveBeenCalled();
   await click("Disable intake");
   expect(context.api.disableEmailInbox).toHaveBeenCalledTimes(1);
 });

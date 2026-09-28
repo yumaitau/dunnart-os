@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Select } from "@cloudflare/kumo";
+import { Button, Select, useKumoToastManager } from "@cloudflare/kumo";
 import { useAuthenticatedApi } from "../../AuthContext";
 import type {
   ChatChannelPairing,
@@ -8,8 +8,12 @@ import type {
 } from "@gadgets/workshop-shared/chat-channels";
 import type { GadgetMetadataWithTimestamps } from "@gadgets/workshop-shared/api";
 
+import DeleteConfirmationDialog from "../../components/DeleteConfirmationDialog";
+
 export const ChatChannelsSettings = () => {
   const { authenticatedApi } = useAuthenticatedApi();
+  const toasts = useKumoToastManager();
+  const [unlink, setUnlink] = useState<ChatChannelStatus["links"][number] | null>(null);
   const [loadedApi, setLoadedApi] = useState<{ api: typeof authenticatedApi } | null>(null);
   const [status, setStatus] = useState<ChatChannelStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<GadgetMetadataWithTimestamps[]>([]);
@@ -20,11 +24,11 @@ export const ChatChannelsSettings = () => {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const container = useRef<HTMLDivElement>(null);
   const generation = useRef(0);
   useEffect(() => {
     const current = ++generation.current;
     setStatus(null);
+    setUnlink(null);
     setPairing(null);
     setWorkspace(null);
     setError(null);
@@ -50,9 +54,12 @@ export const ChatChannelsSettings = () => {
     setError(null);
     try {
       await operation();
+      if (current === generation.current) { setUnlink(null); toasts.add({ title: "Chat channels updated.", variant: "success" }); }
     } catch {
-      if (current === generation.current)
+      if (current === generation.current) {
         setError("Could not confirm the change. Refresh to check, or retry.");
+        toasts.add({ title: "Chat channels could not be updated.", variant: "error" });
+      }
     } finally {
       if (current === generation.current) setBusy(false);
     }
@@ -89,13 +96,12 @@ export const ChatChannelsSettings = () => {
       {!status && !error && <p role="status">Loading chat channels…</p>}
       {status && loadedApi?.api === authenticatedApi && (
         <>
-          <div ref={container}>
+          <div>
             <Select<string>
               label="Workspace you own"
               value={workspace}
               disabled={busy}
               onValueChange={setWorkspace}
-              container={container}
               className="w-full"
               placeholder="Choose a workspace"
               renderValue={(value) =>
@@ -166,12 +172,7 @@ export const ChatChannelsSettings = () => {
                 </span>
                 <Button
                   disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      await authenticatedApi.unlinkChatChannel(link.id);
-                      await refresh();
-                    })
-                  }
+                  onClick={() => setUnlink(link)}
                 >
                   Unlink {link.provider}
                 </Button>
@@ -191,6 +192,11 @@ export const ChatChannelsSettings = () => {
           )}
         </>
       )}
+      <DeleteConfirmationDialog open={unlink !== null} title="Unlink chat channel?"
+        description="Messages from this channel will stop reaching your workspace. Existing chats remain."
+        confirmLabel="Unlink channel" confirmingLabel="Unlinking…" isDeleting={busy}
+        onOpenChange={(open) => { if (!open) setUnlink(null); }}
+        onConfirm={() => run(async () => { if (!unlink) return; await authenticatedApi.unlinkChatChannel(unlink.id); await refresh(); })} />
     </section>
   );
 };

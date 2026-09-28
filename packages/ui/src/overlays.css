@@ -1,0 +1,31 @@
+/* Base UI's transformed positioner is the stacking context, not its popup.
+   Raising only the popup leaves selects under adjacent form controls and sticky headers. */
+[data-base-ui-portal] > [role="presentation"]:has(> .kumo-popover-popup),
+[data-base-ui-portal] > [role="presentation"]:has(> [role="menu"]),
+[data-base-ui-portal] > [role="presentation"]:has(> [role="listbox"]),
+[data-base-ui-portal] > [role="presentation"]:has(> [role="presentation"] > [role="listbox"]) {
+  z-index: 1400;
+}
+
+/* Keep notifications readable above all application dialogs in each app/iframe. */
+[role="region"][aria-label="Notifications"] {
+  z-index: 2000;
+}
+[data-toast-title] {
+  color: var(--text-color-kumo-strong);
+}
+
+/* A dialog portal keeps its backdrop and popup together above page chrome.
+   Nested dialogs are later sibling portals, so their backdrop also covers the parent. */
+[data-base-ui-portal]:has(> [role="dialog"]),
+[data-base-ui-portal]:has(> [role="alertdialog"]) {
+  position: relative;
+  z-index: 1200;
+}
+
+/* Leave the action row of mobile dialog sheets reachable while feedback is visible. */
+@media (max-width: 767px), (max-height: 520px) {
+  body:has([role="dialog"], [role="alertdialog"]) [role="region"][aria-label="Notifications"] {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}

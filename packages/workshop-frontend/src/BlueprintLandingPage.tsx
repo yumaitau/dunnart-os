@@ -1,3 +1,4 @@
+import { NotFoundPage } from './pages/NotFoundPage'
 import { useTimeZone } from './AuthContext'
 import { logRpcFailure } from './rpcErrors'
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
@@ -732,14 +733,7 @@ export default function BlueprintLandingPage({ rpcStub }: Props) {
   }
 
   if (notFound) {
-    return (
-      <BlueprintStatePage
-        title="Blueprint not found"
-        message="This blueprint may have been removed or the link may be incorrect."
-        actionLabel="Back to Explore"
-        onAction={() => navigate({ to: '/explore' })}
-      />
-    )
+    return <NotFoundPage title="Blueprint not found" description="This blueprint may have been removed or the link may be incorrect." />
   }
 
   if (!blueprint) {
