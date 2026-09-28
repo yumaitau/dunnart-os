@@ -91,6 +91,7 @@ describe("native email parsing", () => {
       '<p>Useful notes</p><script>secretScript()</script><style>bad css</style><img src="https://tracking.example.com/pixel">',
     );
     expect(html).toContain("Useful notes");
+    expect(await emailHtmlText("<p>First paragraph</p><p>Second paragraph</p>")).toBe("First paragraph\nSecond paragraph");
     expect(html).not.toContain("secretScript");
     expect(html).not.toContain("bad css");
     expect(fetch).not.toHaveBeenCalled();

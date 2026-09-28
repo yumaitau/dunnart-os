@@ -53,8 +53,8 @@ export async function emailHtmlText(html: string): Promise<string> {
   let text = "";
   await new HTMLRewriter()
     .on("p,div,br,li,tr,h1,h2,h3", {
-      element(element) {
-        element.before("\n");
+      element() {
+        text += "\n";
       },
     })
     .onDocument({
