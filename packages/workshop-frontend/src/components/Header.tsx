@@ -1,12 +1,13 @@
 import { Link } from '@tanstack/react-router'
-import { Hexagon, List, X } from '@phosphor-icons/react'
+import { List, X } from '@phosphor-icons/react'
 import { useOptionalAuthenticatedApi } from '../AuthContext'
 import { useGatekeeperApps } from '../useGatekeeperApps'
 import { useSiteName } from '../ServerConfigContext'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import UserMenu from './UserMenu'
 import TopBarNotice from '../TopBarNotice'
 import SiteLogo from './SiteLogo'
+import DunnartMark from './DunnartMark'
 
 export default function Header() {
   const auth = useOptionalAuthenticatedApi()
@@ -15,6 +16,8 @@ export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const headerRef = useRef<HTMLElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const menuId = useId()
 
   // Click-outside handler to close mobile menu
   useEffect(() => {
@@ -36,6 +39,12 @@ export default function Header() {
   return (
     <header
       ref={headerRef}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && mobileMenuOpen) {
+          setMobileMenuOpen(false)
+          menuButtonRef.current?.focus()
+        }
+      }}
       className="app-header sticky top-0 z-50 backdrop-blur-md border-b border-kumo-line"
       style={{
         backgroundColor: 'color-mix(in srgb, var(--color-kumo-base) 80%, transparent)',
@@ -47,7 +56,7 @@ export default function Header() {
         <div className="flex items-center gap-6">
           <Link to="/" className="flex items-center gap-2">
             <SiteLogo size={22} className="shrink-0">
-              <Hexagon size={22} className="text-kumo-brand" weight="bold" />
+              <DunnartMark size={22} />
             </SiteLogo>
             <span className="text-base font-semibold tracking-tight text-kumo-default">
               {siteName}
@@ -105,8 +114,13 @@ export default function Header() {
           {/* Mobile hamburger button */}
           <div className="sm:hidden">
             <button
+              ref={menuButtonRef}
+              type="button"
+              aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={mobileMenuOpen}
+              aria-controls={mobileMenuOpen ? menuId : undefined}
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-kumo-tint transition-colors text-kumo-default"
+              className="w-11 h-11 rounded-md flex items-center justify-center hover:bg-kumo-tint transition-colors text-kumo-default"
             >
               {mobileMenuOpen ? <X size={20} /> : <List size={20} />}
             </button>
@@ -116,7 +130,7 @@ export default function Header() {
 
       {/* Mobile dropdown menu */}
       {mobileMenuOpen && (
-        <div className="sm:hidden border-t border-kumo-line bg-kumo-base">
+        <div id={menuId} className="sm:hidden border-t border-kumo-line bg-kumo-base">
           <nav className="flex flex-col px-4 py-3 gap-1">
             <Link
               to="/"
