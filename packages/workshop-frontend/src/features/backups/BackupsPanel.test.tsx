@@ -99,10 +99,13 @@ describe('BackupsPanel', () => {
     await render()
     await act(async () => {
       const input = container.querySelector<HTMLInputElement>('input[role="combobox"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Auckland')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
       input.focus()
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     })
     await act(async () => {
+      expect(document.querySelectorAll('[role="option"]')).toHaveLength(1)
       const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(element => element.textContent === 'Pacific/Auckland')!
       item.click()
     })
