@@ -1,5 +1,7 @@
 import type {
   EmailInboxReceipt,
+  EmailInboxPage,
+  EmailInboxMessage,
   EmailInboxStatus,
   EmailRoutingReason,
 } from "@gadgets/workshop-shared/email-inbox";
@@ -17,6 +19,8 @@ interface Receipt extends EmailInboxReceipt {
   workspaceId: string;
   token: string;
   input: InboxMessage;
+  contentRetained?: true;
+  attachments?: EmailInboxMessage["attachments"];
   order: number;
   attempts: number;
   nextAttempt: number;
@@ -87,7 +91,7 @@ export class EmailInbox {
       receipt = {
         ...receipt,
         prompt: undefined,
-        input: { ...receipt.input, text: "", attachments: [] },
+        input: { ...receipt.input, attachments: [] },
       };
     this.put(`message:${receipt.id}`, receipt);
   }
@@ -106,20 +110,46 @@ export class EmailInbox {
               continueRelated: box.continueRelated,
             }
           : null,
-      messages: this.all<Receipt>("message:")
-        .filter((item) => item.userId === userId)
-        .toSorted((a, b) => b.order - a.order)
-        .slice(0, 30)
-        .map(({ id, sender, subject, receivedAt, status, chatPath, routing, notices }) => ({
-          id,
-          sender,
-          subject,
-          receivedAt,
-          status,
-          chatPath,
-          routing,
-          notices,
-        })),
+      messages: this.list(userId).messages,
+    };
+  }
+  private metadata(receipt: Receipt): EmailInboxReceipt {
+    const { id, sender, subject, receivedAt, status, chatPath, routing, notices } = receipt;
+    return { id, sender, subject, receivedAt, status, chatPath, routing, notices };
+  }
+  /** Bound reads and keep every page scoped to the authenticated account, including old addresses. */
+  list(userId: string, before?: number): EmailInboxPage {
+    if (before !== undefined && (!Number.isSafeInteger(before) || before < 1))
+      throw new Error("Invalid inbox cursor.");
+    const receipts = this.ctx.storage.sql
+      .exec<{ value: string }>(
+        `SELECT value FROM email_records WHERE key LIKE 'message:%'
+       AND json_extract(value, '$.userId') = ? AND json_extract(value, '$.receivedAt') >= ?
+       AND json_extract(value, '$.order') < ? ORDER BY json_extract(value, '$.order') DESC LIMIT 31`,
+        userId,
+        Date.now() - RETENTION,
+        before ?? Number.MAX_SAFE_INTEGER,
+      )
+      .toArray()
+      .map((row) => JSON.parse(row.value) as Receipt);
+    return {
+      messages: receipts.slice(0, 30).map((receipt) => this.metadata(receipt)),
+      nextBefore: receipts.length > 30 ? receipts[29].order : null,
+    };
+  }
+  /** Retain bounded plain text for the inbox while discarding completed attachment payloads. */
+  message(userId: string, id: string): EmailInboxMessage | null {
+    const receipt = this.get<Receipt>(`message:${id}`);
+    if (!receipt || receipt.userId !== userId || receipt.receivedAt < Date.now() - RETENTION)
+      return null;
+    return {
+      ...this.metadata(receipt),
+      body:
+        receipt.contentRetained || !["complete", "cancelled"].includes(receipt.status)
+          ? receipt.input.text
+          : null,
+      attachments:
+        receipt.attachments ?? receipt.input.attachments.map(({ name, type }) => ({ name, type })),
     };
   }
   /** Mint an intake address only after checking current ownership of the selected workspace. */
@@ -209,6 +239,8 @@ export class EmailInbox {
         workspaceId: box.workspaceId,
         token,
         input,
+        contentRetained: true,
+        attachments: input.attachments.map(({ name, type }) => ({ name, type })),
         sender: input.sender,
         subject: input.subject,
         receivedAt: now,

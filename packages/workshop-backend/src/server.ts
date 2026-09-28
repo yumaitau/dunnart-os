@@ -166,6 +166,8 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
   unlinkChatChannel(id: string): Promise<void> { return this.ctx.exports.ChatChannels.getByName("").unlink(this.#userId.toString(), id); }
 
   getEmailInboxStatus() { return this.ctx.exports.ChatChannels.getByName("").getEmailInboxStatus(this.#userId.toString()); }
+  listInboxMessages(before?: number) { return this.ctx.exports.ChatChannels.getByName("").listInboxMessages(this.#userId.toString(), before); }
+  getInboxMessage(id: string) { return this.ctx.exports.ChatChannels.getByName("").getInboxMessage(this.#userId.toString(), id); }
   configureEmailInbox(workspaceId: string, continueRelated: boolean) { return this.ctx.exports.ChatChannels.getByName("").configureEmailInbox(this.#userId.toString(), workspaceId, continueRelated); }
   rotateEmailInboxAddress() { return this.ctx.exports.ChatChannels.getByName("").rotateEmailInboxAddress(this.#userId.toString()); }
   disableEmailInbox() { return this.ctx.exports.ChatChannels.getByName("").disableEmailInbox(this.#userId.toString()); }

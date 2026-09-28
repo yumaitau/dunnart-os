@@ -22,7 +22,7 @@ Each email may be at most 1 MiB of raw MIME, with up to 10 attachments totalling
 
 Body and combined extracted attachments are each limited to 32,000 characters, with visible truncation notices. Automated replies are rejected. The account limit is 100 accepted messages per rolling day. The shared dispatcher accepts up to 200 pending receipts and 8 MiB of stored intake JSON; saturation fails intake instead of acknowledging unsaved mail.
 
-Receipts expire after 30 days. Completed or cancelled receipts discard their body, extracted prompt and attachment bytes. Failed receipts keep those bytes for retry until expiry. Chat content follows workspace retention.
+Receipts expire after 30 days. Completed or cancelled receipts retain their bounded text body and attachment names, but discard the extracted prompt and attachment bytes. Failed receipts keep those bytes for retry until expiry. Chat content follows workspace retention.
 
 ## Deployment
 
@@ -42,3 +42,20 @@ The backend saves bounded MIME-derived data before acknowledging receipt, then p
 Email state lives in the existing `ChatChannels` Durable Object and participates in deployment admission draining, native snapshots, mutation fences, and isolated recovery pauses. Workspace references retained by intake are included in backup discovery. Restored dispatch remains paused. Private addresses and queued content are covered by the deployment's encrypted archives.
 
 An interrupted submission retries with the same identity. A completion arriving before the submission acknowledgement still records the original chat. Busy conversations wait; uncertain or exhausted processing is shown as failed and can be retried explicitly. SMTP/provider errors are surfaced rather than claiming that an unsaved message was accepted. Cloudflare's delivery policy still governs mail before the Worker has accepted it.
+
+## Inbox view
+
+Open **Inbox** in the sidebar (or `/inbox`) to browse received emails. The list is
+account-scoped, newest first, with 30 messages per page and **Load older emails**.
+Search filters the loaded subjects and senders. **Refresh inbox** checks for new
+messages and processing changes. Selecting a message shows its plain-text body,
+reported sender, received time in the account timezone, status, attachment names,
+processing notices and conversation link. Failed deliveries can be retried while
+intake remains enabled. Intake configuration remains in Profile → Email intake.
+
+Bounded text bodies and attachment names are retained with receipts for 30 days.
+Raw attachment bytes are discarded after completion or cancellation; extracted
+information remains in the chat. Completed receipts from releases before the inbox
+view may have already discarded their bodies. The UI explicitly marks these bodies
+unavailable instead of presenting an empty email. Expired receipts are excluded
+from listing and detail reads even before the cleanup alarm runs.

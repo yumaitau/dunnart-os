@@ -353,7 +353,8 @@ describe("durable email intake", { timeout: 30000 }, () => {
           .exec("SELECT value FROM email_records WHERE key LIKE 'message:%'")
           .toArray(),
       );
-      expect(rows).not.toContain("Release checklist");
+      expect(rows).toContain("Release checklist");
+      expect(JSON.parse(ctx.storage.sql.exec<{value: string}>("SELECT value FROM email_records WHERE key LIKE 'message:%'").one().value).prompt).toBeUndefined();
     });
     await runInDurableObject(f.channels, async (instance, ctx) => {
       beginNativeRecovery(ctx, "email-inventory", "a".repeat(64));
@@ -429,4 +430,42 @@ describe("durable email intake", { timeout: 30000 }, () => {
       await instance.alarm();
     });
   });
+});
+
+it("pages owned receipts and retains safe text after completion while discarding attachment bytes", async () => {
+  const f = await fixture();
+  for (let i = 0; i < 32; i++) {
+    await f.channels.receiveInboxEmail(f.token, JSON.stringify(input(`<page-${i}@example.com>`, {
+      subject: `Email ${i}`, attachments: [{name:"notes.txt",type:"text/plain",data:btoa("private-binary")}],
+    })));
+  }
+  const first = await f.channels.listInboxMessages(f.userId);
+  expect(first.messages).toHaveLength(30);
+  expect(first.messages[0].subject).toBe("Email 31");
+  const next = await f.channels.listInboxMessages(f.userId, first.nextBefore!);
+  expect(next.messages.map((message) => message.subject)).toEqual(["Email 1", "Email 0"]);
+  expect(next.nextBefore).toBeNull();
+  expect((await f.channels.listInboxMessages("other")).messages).toEqual([]);
+  const id = first.messages[0].id;
+  expect(await f.channels.getInboxMessage("other", id)).toBeNull();
+  await f.channels.complete(`email:${id}`, "done", f.workspace.id.toString(), 7);
+  expect(await f.channels.getInboxMessage(f.userId, id)).toMatchObject({
+    body: input().text, status: "complete", attachments: [{name:"notes.txt",type:"text/plain"}],
+  });
+  expect(JSON.stringify(await f.channels.getInboxMessage(f.userId, id))).not.toContain(btoa("private-binary"));
+  expect(JSON.stringify(first)).not.toContain(input().text);
+  await runInDurableObject(f.channels, (instance) => { expect(() => instance.listInboxMessages(f.userId, -1)).toThrow("Invalid inbox cursor"); });
+  await runInDurableObject(f.channels, async (_instance, ctx) => {
+    const row = JSON.parse(ctx.storage.sql.exec<{value:string}>("SELECT value FROM email_records WHERE key=?", `message:${id}`).one().value);
+    expect(row.input.attachments).toEqual([]);
+    delete row.contentRetained;
+    row.input.text = "";
+    ctx.storage.sql.exec("UPDATE email_records SET value=? WHERE key=?", JSON.stringify(row), `message:${id}`);
+  });
+  expect((await f.channels.getInboxMessage(f.userId, id))?.body).toBeNull();
+  await runInDurableObject(f.channels, async (_instance, ctx) => {
+    ctx.storage.sql.exec("UPDATE email_records SET value=json_set(value, '$.receivedAt', ?) WHERE key LIKE 'message:%'", Date.now()-31*86400000);
+  });
+  expect(await f.channels.getInboxMessage(f.userId, id)).toBeNull();
+  expect((await f.channels.listInboxMessages(f.userId)).messages).toEqual([]);
 });

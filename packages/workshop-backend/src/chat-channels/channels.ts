@@ -111,6 +111,10 @@ export class ChatChannels extends DurableObject<Cloudflare.Env> {
   private inbox(): EmailInbox { return new EmailInbox(this.ctx, this.env); }
   /** Account-scoped inbound email settings and delivery receipts. */
   getEmailInboxStatus(userId: string) { this.live(); return this.inbox().status(userId); }
+  /** Page only the requesting account's retained receipts. */
+  listInboxMessages(userId: string, before?: number) { this.live(); return this.inbox().list(userId, before); }
+  /** Return an owned plain-text preview without exposing raw attachment bytes. */
+  getInboxMessage(userId: string, id: string) { this.live(); return this.inbox().message(userId, id); }
   /** Configure intake only into a workspace the account owns. */
   configureEmailInbox(userId: string, workspaceId: string, continueRelated: boolean) {
     this.live(); return this.inbox().configure(userId, workspaceId, continueRelated);

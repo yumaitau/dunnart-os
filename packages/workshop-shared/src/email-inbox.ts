@@ -40,3 +40,19 @@ export interface EmailInboxStatus {
   /** Most recent receipts, newest first. */
   messages: EmailInboxReceipt[];
 }
+
+/** A bounded page of account-owned receipts, newest first. */
+export interface EmailInboxPage {
+  /** At most 30 received emails. */
+  messages: EmailInboxReceipt[];
+  /** Exclusive sequence cursor for the next page, or null at the end. */
+  nextBefore: number | null;
+}
+
+/** Plain-text email preview. Raw MIME and attachment bytes are never returned. */
+export interface EmailInboxMessage extends EmailInboxReceipt {
+  /** Bounded text body; null when an older receipt no longer retains its content. */
+  body: string | null;
+  /** Original attachment names and declared types, rendered as untrusted text. */
+  attachments: { /** Bounded filename. */ name: string; /** Declared MIME type. */ type: string }[];
+}

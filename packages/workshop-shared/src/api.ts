@@ -1,4 +1,4 @@
-import type { EmailInboxStatus } from "./email-inbox";
+import type { EmailInboxStatus, EmailInboxPage, EmailInboxMessage } from "./email-inbox";
 import type { ChatChannelProvider, ChatChannelStatus, ChatChannelPairing } from "./chat-channels";
 import type { BackupSchedule, BackupStatus, BackupVerification, BackupRestorePreview, BackupRestoreStage } from "./deployment-backups";
 // This file defines the API spoken between the Gadgets Workshop service and the front-end UI.
@@ -428,6 +428,10 @@ export interface AuthenticatedApi extends RpcTarget {
   getChatChannelStatus(): Promise<ChatChannelStatus>;
   /** Return the current account's email intake address and recent receipts. */
   getEmailInboxStatus(): Promise<EmailInboxStatus>;
+  /** List this account's retained emails, newest first, with an optional exclusive sequence cursor. */
+  listInboxMessages(before?: number): Promise<EmailInboxPage>;
+  /** Read this account's plain-text email preview, or null if absent or expired. */
+  getInboxMessage(id: string): Promise<EmailInboxMessage | null>;
   /** Enable intake into an owned workspace; topic matching stays within that workspace. */
   configureEmailInbox(workspaceId: string, continueRelated: boolean): Promise<EmailInboxStatus>;
   /** Revoke the old private address and generate a replacement. */
