@@ -146,7 +146,8 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
               {run.status === 'complete' && <div className="flex flex-wrap gap-2">
                 <Button disabled={busy} aria-label={`Verify archive ${run.id}`} onClick={() => void perform(async () => {
                   const result = await admin.verifyBackup(run.id)
-                  return result.verified ? 'Archive integrity verified. A restore drill is still needed to test recovery.' : `Archive verification failed: ${result.issues.join(' ')}`
+                  if (!result.verified) throw new Error(`Archive verification failed: ${result.issues.join(' ')}`)
+                  return 'Archive integrity verified. A restore drill is still needed to test recovery.'
                 })}>Verify archive</Button>
                 <Button disabled={busy} aria-label={`Preview restore ${run.id}`} onClick={() => void perform(async (isCurrent) => {
                   const result = await admin.previewBackupRestore(run.id)
@@ -163,7 +164,8 @@ export const BackupsPanel = ({ admin }: { admin: BackupsApi }) => {
           const result = await admin.stageBackupRestore(preview.runId, key)
           if (!isCurrent()) return null
           setPreview(result)
-          return result.staged ? `Restore staged in ${result.target}. Production was not changed.` : `Restore staging failed: ${result.issues.join(' ')}`
+          if (!result.staged) throw new Error(`Restore staging failed: ${result.issues.join(' ')}`)
+          return `Restore staged in ${result.target}. Production was not changed.`
         })} />}
     </div>
   )

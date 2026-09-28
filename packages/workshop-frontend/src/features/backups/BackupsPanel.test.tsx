@@ -138,7 +138,8 @@ describe('BackupsPanel', () => {
     admin.verifyBackup.mockResolvedValue({ runId: 'backup-1', verified: false, issues: ['Missing encrypted object'] })
     await render()
     await click('Verify archive backup-1')
-    expect(container.textContent).toContain('Archive verification failed: Missing encrypted object')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Archive verification failed: Missing encrypted object')
+    expect(document.querySelector('[aria-label="Notifications"]')?.textContent).toContain('Backup operation failed.')
     expect(container.textContent).toContain('Archive integrity: not verified')
   })
 
