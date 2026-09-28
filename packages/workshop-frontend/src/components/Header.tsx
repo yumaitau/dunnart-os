@@ -34,7 +34,7 @@ export default function Header() {
   const closeMobileMenu = () => setMobileMenuOpen(false)
 
   const navLinkClass = "text-sm px-3 py-1.5 rounded-md transition-colors text-kumo-subtle"
-  const navLinkActiveClass = "text-sm font-medium px-3 py-1.5 rounded-md transition-colors text-kumo-default bg-kumo-tint"
+  const navLinkActiveClass = "text-sm font-medium px-3 py-1.5 rounded-md transition-colors !text-kumo-strong bg-kumo-tint"
 
   return (
     <header

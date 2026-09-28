@@ -157,8 +157,9 @@
   --color-kumo-ring: oklch(0.52 0.065 285);
   --color-kumo-bubble-user: oklch(0.225 0.025 285);
 
-  --color-kumo-brand: #a8c9a8;
-  --color-kumo-brand-hover: #c0dec0;
+  /* Dark fills keep white button labels readable; link text stays the lighter accent. */
+  --color-kumo-brand: oklch(from var(--text-color-kumo-brand) 0.38 c h);
+  --color-kumo-brand-hover: oklch(from var(--text-color-kumo-brand) 0.32 c h);
 
   --color-kumo-info: oklch(62.3% 0.214 259.815);
   --color-kumo-info-tint: oklch(0.25 0.065 259.815);
