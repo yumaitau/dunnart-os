@@ -10,7 +10,8 @@ export {
 
 /** Keep ES Module worker format; this worker is used over RPC/DOs, not HTTP. */
 export default {
-  async fetch(): Promise<Response> {
+  async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname !== "/") return new Response("Not found", { status: 404 });
     return new Response("Context Library worker is running.", {
       headers: { "content-type": "text/plain" },
     });

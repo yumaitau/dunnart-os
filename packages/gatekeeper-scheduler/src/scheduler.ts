@@ -417,6 +417,11 @@ export class ScheduleVerifier
 
 @validateRpc()
 export class GatekeeperVendor extends WorkerEntrypoint<Cloudflare.Env> {
+  /** This RPC-only connector has no browser-addressable HTTP routes. */
+  async fetch(): Promise<Response> {
+    return new Response("Not found", { status: 404 });
+  }
+
   /** Mint trusted recovery authority, never exposed through the account or management UI. */
   @skipRpcValidation()
   getRecoveryParticipant(): ScheduleRecoveryParticipant {
