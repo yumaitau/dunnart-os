@@ -10,7 +10,7 @@ import type { GadgetMetadataWithTimestamps } from "@gadgets/workshop-shared/api"
 
 export const ChatChannelsSettings = () => {
   const { authenticatedApi } = useAuthenticatedApi();
-  const [loadedApi, setLoadedApi] = useState<typeof authenticatedApi | null>(null);
+  const [loadedApi, setLoadedApi] = useState<{ api: typeof authenticatedApi } | null>(null);
   const [status, setStatus] = useState<ChatChannelStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<GadgetMetadataWithTimestamps[]>([]);
   const [workspace, setWorkspace] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export const ChatChannelsSettings = () => {
     Promise.all([authenticatedApi.getChatChannelStatus(), authenticatedApi.listGadgets()])
       .then(([next, gadgets]) => {
         if (current !== generation.current) return;
-        setLoadedApi(authenticatedApi);
+        setLoadedApi({ api: authenticatedApi });
         setStatus(next);
         setWorkspaces(gadgets.filter((gadget) => !gadget.owner));
       })
@@ -64,7 +64,7 @@ export const ChatChannelsSettings = () => {
       authenticatedApi.listGadgets(),
     ]);
     if (current === generation.current) {
-      setLoadedApi(authenticatedApi);
+      setLoadedApi({ api: authenticatedApi });
       setStatus(next);
       setWorkspaces(gadgets.filter((gadget) => !gadget.owner));
     }
@@ -87,7 +87,7 @@ export const ChatChannelsSettings = () => {
       </p>
       {error && <p role="alert">{error}</p>}
       {!status && !error && <p role="status">Loading chat channels…</p>}
-      {status && loadedApi === authenticatedApi && (
+      {status && loadedApi?.api === authenticatedApi && (
         <>
           <div ref={container}>
             <Select<string>

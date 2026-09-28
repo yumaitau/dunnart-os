@@ -8,7 +8,7 @@ import { formatFullTimestamp } from "../../utils/formatTimestamp";
 export const EmailInboxSettings = () => {
   const { authenticatedApi } = useAuthenticatedApi();
   const timeZone = useTimeZone();
-  const [loadedApi, setLoadedApi] = useState<typeof authenticatedApi | null>(null);
+  const [loadedApi, setLoadedApi] = useState<{ api: typeof authenticatedApi } | null>(null);
   const [status, setStatus] = useState<EmailInboxStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<GadgetMetadataWithTimestamps[]>([]);
   const [workspace, setWorkspace] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export const EmailInboxSettings = () => {
     Promise.all([authenticatedApi.getEmailInboxStatus(), authenticatedApi.listGadgets()])
       .then(([next, gadgets]) => {
         if (current !== generation.current) return;
-        setLoadedApi(authenticatedApi);
+        setLoadedApi({ api: authenticatedApi });
         setStatus(next);
         setWorkspaces(gadgets.filter((item) => !item.owner));
         setWorkspace(next.configuration?.workspaceId ?? null);
@@ -52,7 +52,7 @@ export const EmailInboxSettings = () => {
     try {
       const next = await operation();
       if (current !== generation.current) return;
-      setLoadedApi(authenticatedApi);
+      setLoadedApi({ api: authenticatedApi });
       setStatus(next);
     } catch {
       if (current === generation.current)
@@ -69,17 +69,18 @@ export const EmailInboxSettings = () => {
     ]);
     if (current === generation.current) {
       setWorkspaces(gadgets.filter((item) => !item.owner));
-      if (loadedApi !== authenticatedApi || !status) {
+      if (loadedApi?.api !== authenticatedApi || !status) {
         setWorkspace(next.configuration?.workspaceId ?? null);
         setContinueRelated(next.configuration?.continueRelated ?? true);
       }
     }
     return next;
   };
-  const current = loadedApi === authenticatedApi ? status : null;
+  const current = loadedApi?.api === authenticatedApi ? status : null;
 
   return (
     <section
+      id="email-intake"
       aria-label="Email intake"
       className="min-w-0 space-y-4 rounded-xl border border-kumo-line p-5"
     >
@@ -206,7 +207,12 @@ export const EmailInboxSettings = () => {
       )}
       {current && (
         <div className="space-y-3 border-t border-kumo-line pt-4">
-          <h3 className="text-sm font-semibold">Recent emails</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold">Recent emails</h3>
+            <a href="/inbox" className="text-sm underline underline-offset-4">
+              Open inbox
+            </a>
+          </div>
           {current.messages.length === 0 && (
             <p className="text-sm text-kumo-subtle">
               No emails received yet. Send a message to your private address, then refresh here.

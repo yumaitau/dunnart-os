@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /* eslint-disable react/react-in-jsx-scope */
 import { act, StrictMode } from "react";
+import { RpcStub, RpcTarget } from "capnweb";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import type { AuthenticatedApi } from "@gadgets/workshop-shared/api";
@@ -149,7 +150,9 @@ it("shows receipts, extraction notices, safe chat links and retry failures", asy
   await render();
   expect(container.querySelector("script")).toBeNull();
   expect(container.textContent).toContain("Attachment not read");
-  expect(container.querySelector("a")?.getAttribute("href")).toBe("/workspace/workspace?chat=7");
+  expect(container.querySelector('a[href^="/workspace/"]')?.getAttribute("href")).toBe(
+    "/workspace/workspace?chat=7",
+  );
   await click("Retry email");
   expect(context.api.retryInboxMessage).toHaveBeenCalledWith("mail");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not confirm");
@@ -176,4 +179,37 @@ it("discards private addresses returned after the signed-in account changes", as
   await render();
   await act(async () => finish(status(true)));
   expect(container.textContent).not.toContain(configuration.address);
+});
+
+it("loads and refreshes through a callable Cap’n Web stub", async () => {
+  const delegate = context.api;
+  class Api extends RpcTarget {
+    getEmailInboxStatus() {
+      return delegate.getEmailInboxStatus();
+    }
+    listGadgets() {
+      return delegate.listGadgets();
+    }
+    configureEmailInbox(workspace: string, related: boolean) {
+      return delegate.configureEmailInbox(workspace, related);
+    }
+    rotateEmailInboxAddress() {
+      return delegate.rotateEmailInboxAddress();
+    }
+    disableEmailInbox() {
+      return delegate.disableEmailInbox();
+    }
+    retryInboxMessage(id: string) {
+      return delegate.retryInboxMessage(id);
+    }
+  }
+  using api = new RpcStub(new Api());
+  expect(typeof api).toBe("function");
+  context.api = api;
+  await expect(api.getEmailInboxStatus()).resolves.toEqual(status());
+  await render();
+  expect(container.textContent).not.toContain("Loading email intake");
+  expect(container.textContent).toContain("Enable email intake");
+  await click("Refresh inbox");
+  expect(container.textContent).toContain("Enable email intake");
 });

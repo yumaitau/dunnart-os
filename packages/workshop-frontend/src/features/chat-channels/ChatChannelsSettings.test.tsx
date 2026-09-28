@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /* eslint-disable react/react-in-jsx-scope */
 import { act, StrictMode } from "react";
+import { RpcStub, RpcTarget } from "capnweb";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import type { AuthenticatedApi } from "@gadgets/workshop-shared/api";
@@ -152,4 +153,20 @@ it("ignores a completed pairing when the account changes", async () => {
     finish({ command: "link old-account-secret", expiresAt: Date.now() + 600000, openUrl: null }),
   );
   expect(container.textContent).not.toContain("old-account-secret");
+});
+
+it("loads channel settings through a callable RPC stub", async () => {
+  const delegate = context.api;
+  class Api extends RpcTarget {
+    getChatChannelStatus() { return delegate.getChatChannelStatus(); }
+    listGadgets() { return delegate.listGadgets(); }
+    pairChatChannel(...args: Parameters<AuthenticatedApi["pairChatChannel"]>) { return delegate.pairChatChannel(...args); }
+    unlinkChatChannel(...args: Parameters<AuthenticatedApi["unlinkChatChannel"]>) { return delegate.unlinkChatChannel(...args); }
+  }
+  using api = new RpcStub(new Api());
+  context.api = api;
+  await render();
+  expect(container.textContent).toContain("Choose a workspace");
+  await click("Refresh channels");
+  expect(container.textContent).toContain("Choose a workspace");
 });

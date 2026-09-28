@@ -4,6 +4,7 @@ import {
   Blueprint,
   CalendarDots,
   ClipboardText,
+  EnvelopeSimple,
   MagnifyingGlass,
   Plus,
   SquaresFour,
@@ -239,6 +240,7 @@ export default function CommandPalette({
     }))
 
     const nav: Command[] = [
+      { id: 'nav-inbox', label: 'Inbox', icon: <EnvelopeSimple size={15} />, run: () => navigate({ to: '/inbox' }) },
       !hiddenNav.has('tasks') && {
         id: 'nav-tasks',
         label: 'Tasks',

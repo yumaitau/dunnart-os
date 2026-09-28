@@ -6,6 +6,7 @@ import {
   ClipboardText,
   Compass,
   House,
+  EnvelopeSimple,
   MagnifyingGlass,
   SidebarSimple,
   SquaresFour,
@@ -120,6 +121,7 @@ export default function Sidebar({
         <div className="flex shrink-0 flex-col gap-3 pt-3">
           {/* Primary nav */}
           <nav className="flex flex-col gap-0.5 px-2">
+            <SidebarItem to="/inbox" label="Inbox" icon={<EnvelopeSimple size={14} weight="regular" />} collapsed={collapsed} />
             {!hiddenNav.has('tasks') && (
               <SidebarItem
                 to="/tasks"
