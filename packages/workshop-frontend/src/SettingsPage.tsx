@@ -1,3 +1,4 @@
+import { EmailInboxSettings } from "./features/email-inbox/EmailInboxSettings";
 import { ChatChannelsSettings } from "./features/chat-channels/ChatChannelsSettings";
 import { SecuritySettings } from './features/auth/SecuritySettings'
 import { TimeZoneSettings } from './features/timezone/TimeZoneSettings'
@@ -386,7 +387,8 @@ export default function SettingsPage() {
 
         {/* Usage & billing — only when the Cloudflare limits flow is enabled server-side */}
         <TimeZoneSettings />
-      <ChatChannelsSettings />
+        <ChatChannelsSettings />
+        <EmailInboxSettings />
         <UsageSettings />
 
         {betterAuth && <SecuritySettings />}
