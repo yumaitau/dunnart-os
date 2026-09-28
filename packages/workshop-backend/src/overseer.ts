@@ -1620,6 +1620,20 @@ class OverseerImpl implements AgentHooks {
     catch { this.logger.warn("workspace memory indexing unavailable", { event: "memory.remember.failed" }); }
   }
 
+  async relatedEmailChat(question: string): Promise<number | null> {
+    try {
+      const memory = this.memory();
+      if (!memory) return null;
+      if (memory.needsBootstrap()) {
+        await memory.bootstrap([...this.storage.chatMeta.list({ reverse: true, limit: 12 })]
+          .map(meta => this.completedMemorySource(meta.id)).filter(source => source !== undefined));
+      }
+      const id = await memory.relatedChat(question);
+      const meta = id === null ? undefined : this.storage.chatMeta.get(id);
+      return meta && !meta.activeAgent && !this.getChatAgentContext(meta.id).spawnerConfig ? meta.id : null;
+    } catch { return null; }
+  }
+
   forgetChatMemory(chatId: number): void {
     // Also erase when the feature was disabled after a previous deployment indexed this chat.
     AgentMemory.forgetChat(this.ctx.storage.sql, chatId);
@@ -6984,7 +6998,7 @@ class OverseerImpl implements AgentHooks {
     try {
       if (record.channelReplyId) {
         if (readRecoveryRuntimeIdentity(this.ctx)) throw new Error("Channel replies are paused during recovery.");
-        await this.ctx.exports.ChatChannels.getByName("").complete(record.channelReplyId, record.responseText, this.ctx.id.toString());
+        await this.ctx.exports.ChatChannels.getByName("").complete(record.channelReplyId, record.responseText, this.ctx.id.toString(), record.chatId);
       } else if (record.chatGatewayRpcTarget) {
         await record.chatGatewayRpcTarget.onGadgetResponse({ text: record.responseText });
       } else throw new Error("Missing external reply destination.");
@@ -10198,6 +10212,33 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
     const profile = await this.impl.users.get(this.impl.users.idFromString(userId)).whoami();
     return this.receiveExternalMessage({ callerEmail:profile.id, externalChatKey:`channel:${linkId}`,
       idempotencyKey:`channel:${messageId}`, channelReplyId:messageId, prompt, title:"Private chat" });
+  }
+
+  /** Semantic email routing sees only current, completed conversations in the owned workspace. */
+  async findRelatedEmailChat(userId: string, question: string): Promise<number | null> {
+    if (!await this.isChatChannelOwner(userId)) return null;
+    return this.impl.relatedEmailChat(question);
+  }
+
+  /** Submit durable email information; email headers cannot choose the application account. */
+  async receiveInboxMessage(userId: string, threadKey: string, messageId: string, prompt: string, relatedChatId?: number): Promise<SubmitExternalMessageResult> {
+    if (!await this.isChatChannelOwner(userId)) return { accepted: false, message: "Workspace access is no longer available." };
+    const prior = this.impl.storage.gadgetResponseDeliveries.get(`email:${messageId}`);
+    if (prior) {
+      if (prior.status === "delivered") await this.ctx.exports.ChatChannels.getByName("").complete(`email:${messageId}`, "", this.ctx.id.toString(), prior.chatId);
+      return { accepted: true, chatPath: `/workspace/${this.ctx.id.toString()}?chat=${prior.chatId}` };
+    }
+    const externalChatKey = `email:${threadKey}`;
+    const existing = this.#getExternalChat(externalChatKey);
+    const chatId = existing?.chatId ?? relatedChatId;
+    if (chatId !== undefined) {
+      const meta = this.impl.storage.chatMeta.get(chatId);
+      if (meta && (meta.activeAgent || this.impl.storage.gadgetResponseDeliveries.undeliveredByChatId.get(chatId))) throw new Error("Email conversation is busy.");
+      if (!existing && meta && !this.impl.getChatAgentContext(chatId).spawnerConfig) this.impl.storage.externalChats.put({ externalChatKey, chatId });
+    }
+    const profile = await this.impl.users.get(this.impl.users.idFromString(userId)).whoami();
+    return this.receiveExternalMessage({ callerEmail: profile.id, externalChatKey,
+      idempotencyKey: `email:${messageId}`, channelReplyId: `email:${messageId}`, prompt, title: "Email information" });
   }
 
   async receiveExternalMessage(

@@ -1051,6 +1051,9 @@ importers:
       pako:
         specifier: ^2.1.0
         version: 2.2.0
+      postal-mime:
+        specifier: 2.7.6
+        version: 2.7.6
       temporal-polyfill:
         specifier: 1.0.2
         version: 1.0.2

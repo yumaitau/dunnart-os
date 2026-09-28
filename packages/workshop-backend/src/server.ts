@@ -1,3 +1,4 @@
+import { handleInboxEmail } from "./email-inbox/handler";
 import type { ChatChannelProvider, ChatChannelStatus, ChatChannelPairing } from "@gadgets/workshop-shared/chat-channels";
 import { handleChatChannelRequest } from "./chat-channels/http";
 export { ChatChannels } from "./chat-channels/channels";
@@ -163,6 +164,12 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
     return this.ctx.exports.ChatChannels.getByName("").pair(this.#userId.toString(), provider, workspaceId);
   }
   unlinkChatChannel(id: string): Promise<void> { return this.ctx.exports.ChatChannels.getByName("").unlink(this.#userId.toString(), id); }
+
+  getEmailInboxStatus() { return this.ctx.exports.ChatChannels.getByName("").getEmailInboxStatus(this.#userId.toString()); }
+  configureEmailInbox(workspaceId: string, continueRelated: boolean) { return this.ctx.exports.ChatChannels.getByName("").configureEmailInbox(this.#userId.toString(), workspaceId, continueRelated); }
+  rotateEmailInboxAddress() { return this.ctx.exports.ChatChannels.getByName("").rotateEmailInboxAddress(this.#userId.toString()); }
+  disableEmailInbox() { return this.ctx.exports.ChatChannels.getByName("").disableEmailInbox(this.#userId.toString()); }
+  retryInboxMessage(id: string) { return this.ctx.exports.ChatChannels.getByName("").retryInboxMessage(this.#userId.toString(), id); }
 
   getTimeZone(): Promise<string> { return this.#user.getTimeZone(); }
   setTimeZone(timeZone: string): Promise<void> { return this.#user.setTimeZone(timeZone); }
@@ -900,6 +907,10 @@ guardDeploymentRpc(PublicApiImpl);
 guardDeploymentRpc(AuthenticatedApiImpl);
 
 export default {
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext) {
+    const tracked = trackDeploymentContext(ctx, !!(env.BACKUPS && env.BACKUP_PUBLIC_KEY && env.BACKUP_AUTHENTICATION_KEY));
+    await withDeploymentAdmission(tracked, () => handleInboxEmail(message, env, ctx.exports.ChatChannels.getByName("")));
+  },
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     const tracked = trackDeploymentContext(ctx, !!(env.BACKUPS && env.BACKUP_PUBLIC_KEY && env.BACKUP_AUTHENTICATION_KEY));
     try { return await withDeploymentAdmission(tracked, () => dispatchRequest(req, env, tracked)); }

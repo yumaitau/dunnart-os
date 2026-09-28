@@ -274,6 +274,11 @@ export function createDeploymentRecovery(env: RecoveryEnv, exports: Cloudflare.E
       const accounts = new Map<string, Set<string>>();
       const accountDescriptors = new Map<string, GatekeeperRecoveryDescriptor>();
       const accountRecords: Awaited<ReturnType<ReturnType<typeof user>["getRecoveryInventory"]>>["accounts"] = [];
+      if (exports.ChatChannels) {
+        for (const id of await exports.ChatChannels.getByName("").getRecoveryWorkspaceIds()) {
+          if (!journal.workspaces.includes(id)) journal.workspaces.push(id);
+        }
+      }
       for (const id of ids) {
         await phase(run, "user-fence", id);
         journal.users.push(id); await storage.put(journalKey(run), journal); await acquireNative(() => user(id).beginRecovery(run, journal.key));

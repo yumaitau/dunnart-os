@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "exports": {
+    "./email-inbox": {
+      "types": "./src/email-inbox.ts",
+      "import": "./src/email-inbox.ts"
+    },
     "./api": {
       "types": "./src/api.ts",
       "import": "./src/api.ts"

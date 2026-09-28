@@ -83,6 +83,14 @@ describe('router fetch', () => {
 });
 
 describe('router email', () => {
+  it('routes private plus-address intake to the backend without invoking the email gatekeeper', async () => {
+    const received: unknown[] = [];
+    const env = makeEnv({ WORKSHOP_BACKEND: { email: async (message: unknown) => { received.push(message); } },
+      GATEKEEPER_EMAIL: { email: async () => { throw new Error('Wrong handler'); } } });
+    const message = { to: `inbox+${'a'.repeat(48)}@inbox.example.com` } as ForwardableEmailMessage;
+    await router.email!(message, env, {} as ExecutionContext);
+    expect(received).toEqual([message]);
+  });
   it('forwards to GATEKEEPER_EMAIL when bound', async () => {
     const received: unknown[] = [];
     const env = makeEnv({

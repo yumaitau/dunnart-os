@@ -1,3 +1,5 @@
+import { EmailInbox } from "../email-inbox/inbox";
+import type { InboxMessage } from "../email-inbox/message";
 import { DurableObject } from "cloudflare:workers";
 import type {
   ChatChannelProvider,
@@ -106,6 +108,25 @@ export class ChatChannels extends DurableObject<Cloudflare.Env> {
   private async owned(userId: string, workspaceId: string): Promise<boolean> {
     return this.workspace(workspaceId).isChatChannelOwner(userId);
   }
+  private inbox(): EmailInbox { return new EmailInbox(this.ctx, this.env); }
+  /** Account-scoped inbound email settings and delivery receipts. */
+  getEmailInboxStatus(userId: string) { this.live(); return this.inbox().status(userId); }
+  /** Configure intake only into a workspace the account owns. */
+  configureEmailInbox(userId: string, workspaceId: string, continueRelated: boolean) {
+    this.live(); return this.inbox().configure(userId, workspaceId, continueRelated);
+  }
+  /** Replace the account's private recipient capability. */
+  rotateEmailInboxAddress(userId: string) { this.live(); return this.inbox().rotate(userId); }
+  /** Revoke intake and unsubmitted work for this account. */
+  disableEmailInbox(userId: string) { this.live(); this.inbox().disable(userId); }
+  /** Retry an account-owned receipt without duplicating its chat message. */
+  retryInboxMessage(userId: string, id: string) { this.live(); return this.inbox().retry(userId, id); }
+  /** Validate the recipient before consuming a raw MIME stream. */
+  acceptsInboxAddress(token: string) { this.live(); return this.inbox().accepts(token); }
+  /** Trusted native email handler only; headers never choose an application identity. */
+  receiveInboxEmail(token: string, json: string) {
+    this.live(); return this.inbox().receive(token, JSON.parse(json) as InboxMessage);
+  }
   /** Capture channel installation and delivery state together with the rest of the deployment. */
   async getRecoverySnapshot(): Promise<string> {
     return JSON.stringify(await captureNativeRoot(this.ctx));
@@ -120,6 +141,17 @@ export class ChatChannels extends DurableObject<Cloudflare.Env> {
   /** Release only the matching backup fence. */
   endRecovery(run: string): void {
     endNativeRecovery(this.ctx, run);
+  }
+  /** Include workspaces retained by channel links or email receipts in the backup graph. */
+  getRecoveryWorkspaceIds(): string[] {
+    const references: Array<{ workspaceId?: string }> = this.ctx.storage.sql
+      .exec<{ value: string }>("SELECT value FROM channel_records WHERE key LIKE 'link:%' OR key LIKE 'job:%'")
+      .toArray().map(row => JSON.parse(row.value));
+    const hasEmail = this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='email_records'").toArray().length > 0;
+    if (hasEmail) {
+      for (const row of this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM email_records WHERE key LIKE 'mailbox:%' OR key LIKE 'message:%'")) references.push(JSON.parse(row.value));
+    }
+    return [...new Set(references.map(item => item.workspaceId).filter((id): id is string => typeof id === "string" && /^[a-f0-9]{64}$/.test(id)))];
   }
   /** Present only this user's links and bounded delivery diagnostics. */
   async status(userId: string): Promise<ChatChannelStatus> {
@@ -291,8 +323,9 @@ export class ChatChannels extends DurableObject<Cloudflare.Env> {
     });
   }
   /** Idempotent durable handoff from an agent's completed turn into the reply outbox. */
-  async complete(id: string, text: string, workspaceId: string): Promise<void> {
+  async complete(id: string, text: string, workspaceId: string, chatId?: number): Promise<void> {
     this.live();
+    if (id.startsWith("email:")) { await this.inbox().complete(id.slice(6), workspaceId, chatId); return; }
     const job = this.get<Job>(`job:${id}`);
     if (!job || TERMINAL.has(job.status) || job.status === "sending" || job.status === "ready")
       return;
@@ -318,6 +351,7 @@ export class ChatChannels extends DurableObject<Cloudflare.Env> {
     try {
       // Re-arm before any network work. A crash leaves a durable watchdog, not a lost inbox.
       await this.ctx.storage.setAlarm(Date.now() + 15000);
+      await this.inbox().process();
       const jobs = this.all<Job>("job:").toSorted((a, b) => a.order - b.order);
       for (const initial of jobs) {
         if (Date.now() - initial.createdAt > 7 * 86400000 && TERMINAL.has(initial.status)) {
@@ -422,7 +456,7 @@ export class ChatChannels extends DurableObject<Cloudflare.Env> {
       }
       await this.ctx.storage.setAlarm(
         Date.now() +
-          (this.all<Job>("job:").some((j) => !TERMINAL.has(j.status)) ? 15000 : 86400000),
+          (this.inbox().pending() || this.all<Job>("job:").some((j) => !TERMINAL.has(j.status)) ? 15000 : 86400000),
       );
     } finally {
       this.working = false;

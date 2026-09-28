@@ -19,6 +19,20 @@ const source = (patch: Partial<MemorySource> = {}): MemorySource => ({ chatId: 1
   answer: "Build, test, then deploy.", recordedAt: Date.now(), ...patch });
 
 describe("workspace semantic memory", () => {
+  it("routes email only for one strong current conversation, not ambiguous or unrelated matches", () => inside(async (_, state) => {
+    const { ai } = embeddings();
+    let current = true;
+    const memory = new AgentMemory(state.storage.sql, ai, () => current);
+    await memory.remember(source());
+    expect(await memory.relatedChat("Updated release procedure for this application")).toBe(1);
+    expect(await memory.relatedChat("unrelated supplier information and shipping details")).toBeNull();
+    expect(await memory.relatedChat("hi")).toBeNull();
+    await memory.remember(source({ chatId: 2, question: "Another release planning conversation" }));
+    expect(await memory.relatedChat("Updated release procedure for this application")).toBeNull();
+    current = false;
+    expect(await memory.relatedChat("Updated release procedure for this application")).toBeNull();
+  }));
+
   it("recalls paraphrases, skips unrelated questions, and reuses exact questions without model I/O", () => inside(async (_, state) => {
     const { ai, run } = embeddings();
     const memory = new AgentMemory(state.storage.sql, ai, () => true);

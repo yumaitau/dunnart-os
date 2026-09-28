@@ -13,7 +13,7 @@ type EmailEntrypoint = CloudflareWorkersModule.WorkerEntrypoint &
     Required<Pick<CloudflareWorkersModule.WorkerEntrypoint, "email">>;
 
 export interface Env {
-  WORKSHOP_BACKEND: Fetcher;
+  WORKSHOP_BACKEND: Fetcher & Service<EmailEntrypoint>;
   /** Present in production (wrangler.jsonc assets stanza); absent in dev. */
   ASSETS?: Fetcher;
   /** Dormant until custom domains + Email Routing exist; the handler ships anyway. */
@@ -60,6 +60,10 @@ export default {
   },
 
   async email(message, env) {
+    if (/^inbox\+[a-f0-9]{48}@/i.test(message.to)) {
+      await env.WORKSHOP_BACKEND.email(message);
+      return;
+    }
     if (!env.GATEKEEPER_EMAIL) {
       message.setReject("No email gatekeeper is installed on this instance.");
       return;

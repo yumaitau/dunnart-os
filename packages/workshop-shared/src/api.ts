@@ -1,3 +1,4 @@
+import type { EmailInboxStatus } from "./email-inbox";
 import type { ChatChannelProvider, ChatChannelStatus, ChatChannelPairing } from "./chat-channels";
 import type { BackupSchedule, BackupStatus, BackupVerification, BackupRestorePreview, BackupRestoreStage } from "./deployment-backups";
 // This file defines the API spoken between the Gadgets Workshop service and the front-end UI.
@@ -425,6 +426,16 @@ export interface AuthenticatedApi extends RpcTarget {
 
   /** List configured chat providers and this account's private conversation links. */
   getChatChannelStatus(): Promise<ChatChannelStatus>;
+  /** Return the current account's email intake address and recent receipts. */
+  getEmailInboxStatus(): Promise<EmailInboxStatus>;
+  /** Enable intake into an owned workspace; topic matching stays within that workspace. */
+  configureEmailInbox(workspaceId: string, continueRelated: boolean): Promise<EmailInboxStatus>;
+  /** Revoke the old private address and generate a replacement. */
+  rotateEmailInboxAddress(): Promise<EmailInboxStatus>;
+  /** Disable the address and cancel emails that have not been submitted. */
+  disableEmailInbox(): Promise<void>;
+  /** Retry this account's failed email with its original idempotency key. */
+  retryInboxMessage(id: string): Promise<EmailInboxStatus>;
   /** Create a ten-minute single-use pairing command for an owned workspace. */
   pairChatChannel(provider: ChatChannelProvider, workspaceId: string): Promise<ChatChannelPairing>;
   /** Revoke a private conversation link owned by this account, cancelling queued replies. */
