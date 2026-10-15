@@ -53,14 +53,6 @@ jobs:
       - name: Require eval results
         run: test -f packages/workshop-evals/.wrangler/evals/results.json
 
-      - name: Upload eval results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: workshop-evals
-          path: packages/workshop-evals/.wrangler/evals/results.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
 
       # The zero floor keeps report validation active without rejecting task misses in report-only mode.
       - name: Publish eval report
