@@ -130,7 +130,7 @@ jobs:
           path: packages/workshop-evals/.wrangler/evals/results.json
           include-hidden-files: true
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 1
 
   pr-evals:
     name: Eval ${{ matrix.revision }}
@@ -226,7 +226,7 @@ jobs:
           path: packages/workshop-evals/.wrangler/evals/results.json
           include-hidden-files: true
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 1
 
       - name: Upload current-run ${{ matrix.revision }} trajectories
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -236,7 +236,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           overwrite: true
-          retention-days: 30
+          retention-days: 1
 
   compare:
     name: Compare evals
@@ -297,7 +297,7 @@ jobs:
           path: artifacts/comparison
           if-no-files-found: error
           overwrite: true
-          retention-days: 30
+          retention-days: 1
 
       # One comment per pull request, updated in place, so the latest comparison is where the
       # conversation is rather than behind the checks list.
