@@ -84,7 +84,9 @@ jobs:
 
   main-baseline:
     name: Cache main baseline
-    if: github.event_name == 'push'
+    # Same owner guard as `trust`: forks hold no AI Gateway secrets, so every eval file fails at
+    # load, and the baseline would only feed pr-evals, which never runs outside the upstream org.
+    if: github.event_name == 'push' && github.repository_owner == 'cloudflare'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
